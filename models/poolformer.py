@@ -459,7 +459,7 @@ default_cfgs = {
 }
 
 
-def poolformer_s12(pretrained=False, **kwargs):
+def create_poolformer_s12(pretrained=False, **kwargs):
     """
     PoolFormer-S12 model, Params: 12M
     --layers: [x,x,x,x], numbers of layers for the four stages
@@ -488,7 +488,7 @@ def poolformer_s12(pretrained=False, **kwargs):
     return model
 
 
-def poolformer_s24(pretrained=False, **kwargs):
+def create_poolformer_s24(pretrained=False, **kwargs):
     """
     PoolFormer-S24 model, Params: 21M
     """
@@ -513,7 +513,7 @@ def poolformer_s24(pretrained=False, **kwargs):
     return model
 
 
-def poolformer_s36(pretrained=False, **kwargs):
+def create_poolformer_s36(pretrained=False, **kwargs):
     """
     PoolFormer-S36 model, Params: 31M
     """
@@ -539,7 +539,7 @@ def poolformer_s36(pretrained=False, **kwargs):
     return model
 
 
-def poolformer_m36(pretrained=False, **kwargs):
+def create_poolformer_m36(pretrained=False, **kwargs):
     """
     PoolFormer-M36 model, Params: 56M
     """
@@ -565,7 +565,7 @@ def poolformer_m36(pretrained=False, **kwargs):
     return model
 
 
-def poolformer_m48(pretrained=False, **kwargs):
+def create_poolformer_m48(pretrained=False, **kwargs):
     """
     PoolFormer-M48 model, Params: 73M
     """

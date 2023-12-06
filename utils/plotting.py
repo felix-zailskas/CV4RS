@@ -8,7 +8,9 @@ def percentage_formatter(x, pos):
     return f"{100 * x:.0f}%"
 
 
-def create_plot(full_data: dict, axis, fields: list[str], labels: list[str]=None, ylab=None):
+def create_plot(
+    full_data: dict, axis, fields: list[str], labels: list[str] = None, ylab=None
+):
     # extract needed data
     selected_data = []
     for field in fields:
@@ -35,14 +37,22 @@ def create_plot(full_data: dict, axis, fields: list[str], labels: list[str]=None
 
 
 def create_micro_macro_plot(
-    data: dict, show: bool = True, save_micro: str = None, save_macro: str = None, model_type: str = ""
+    data: dict,
+    show: bool = True,
+    save_micro: str = None,
+    save_macro: str = None,
+    model_type: str = "",
 ):
     micro_fig, micro_ax = plt.subplots(figsize=(6, 4))
     macro_fig, macro_ax = plt.subplots(figsize=(6, 4))
 
     # Create plots for micro and macro data
-    create_plot(data["micro avg"], axis=micro_ax, fields=["F1-Score", "Precision", "Recall"])
-    create_plot(data["macro avg"], axis=macro_ax, fields=["F1-Score", "Precision", "Recall"])
+    create_plot(
+        data["micro avg"], axis=micro_ax, fields=["F1-Score", "Precision", "Recall"]
+    )
+    create_plot(
+        data["macro avg"], axis=macro_ax, fields=["F1-Score", "Precision", "Recall"]
+    )
 
     # adjust figure name etc.
     micro_ax.set_title(f"{model_type}{': ' if model_type != '' else ''}Micro Average")
@@ -60,15 +70,22 @@ def create_micro_macro_plot(
 
 
 def create_model_comparison_plot(
-    data: dict, model_types: list[str], show: bool = True, save_micro: str = None, save_macro: str = None,
+    data: dict,
+    model_types: list[str],
+    show: bool = True,
+    save_micro: str = None,
+    save_macro: str = None,
 ):
-
     micro_fig, micro_ax = plt.subplots(figsize=(6, 4))
     macro_fig, macro_ax = plt.subplots(figsize=(6, 4))
 
     # Create plots for micro and macro data
-    create_plot(data["micro avg"], axis=micro_ax, fields=model_types, ylab="F1-Score in %")
-    create_plot(data["macro avg"], axis=macro_ax, fields=model_types, ylab="F1-Score in %")
+    create_plot(
+        data["micro avg"], axis=micro_ax, fields=model_types, ylab="F1-Score in %"
+    )
+    create_plot(
+        data["macro avg"], axis=macro_ax, fields=model_types, ylab="F1-Score in %"
+    )
 
     # adjust figure name etc.
     micro_ax.set_title(f"F1-Score Micro Average")
