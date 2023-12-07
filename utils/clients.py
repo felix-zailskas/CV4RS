@@ -90,8 +90,8 @@ class FLCLient:
         self.model.train()
         for idx, batch in enumerate(tqdm(self.train_loader, desc="training")):
             data, labels, index = batch["data"], batch["label"], batch["index"]
-            data = data
-            labels = labels
+            data = data.to('cuda')
+            labels = labels.to('cuda')
             self.optimizer.zero_grad()
 
             logits = self.model(data)
@@ -155,7 +155,7 @@ class GlobalClient:
 
         with torch.no_grad():
             for batch_idx, batch in enumerate(tqdm(self.val_loader, desc="test")):
-                data = batch["data"]
+                data = batch["data"].cuda()
                 labels = batch["label"].numpy()
 
                 logits = self.model(data)
