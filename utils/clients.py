@@ -45,7 +45,7 @@ class FLCLient:
         criterion_kwargs: dict = {"reduction": "mean"},
         device: torch.device = torch.device('cpu')
     ) -> None:
-        self.model = model#.to(device)
+        self.model = model
         self.optimizer_constructor = optimizer_constructor
         self.optimizer_kwargs = optimizer_kwargs
         self.criterion_constructor = criterion_constructor
@@ -190,6 +190,6 @@ class GlobalClient:
         # update the global model
         global_state_dict = self.model.state_dict()
         for key, value in global_state_dict.items():
-            update = update_aggregation[key]
+            update = update_aggregation[key].to(self.device)
             global_state_dict[key] = value + update
         self.model.load_state_dict(global_state_dict)
