@@ -11,6 +11,7 @@ from utils.pytorch_utils import (
     init_results,
     print_micro_macro,
     update_results,
+    start_cuda
 )
 
 
@@ -42,8 +43,9 @@ class FLCLient:
         optimizer_kwargs: dict = {"lr": 0.001, "weight_decay": 0},
         criterion_constructor: callable = torch.nn.BCEWithLogitsLoss,
         criterion_kwargs: dict = {"reduction": "mean"},
+        device: torch.device = torch.device('cpu')
     ) -> None:
-        self.model = model
+        self.model = model#.to(device)
         self.optimizer_constructor = optimizer_constructor
         self.optimizer_kwargs = optimizer_kwargs
         self.criterion_constructor = criterion_constructor
@@ -56,6 +58,7 @@ class FLCLient:
             shuffle=True,
             pin_memory=True,
         )
+        self.device = device
 
     def set_model(self, model: torch.nn.Module):
         self.model = copy.deepcopy(model)
@@ -90,8 +93,8 @@ class FLCLient:
         self.model.train()
         for idx, batch in enumerate(tqdm(self.train_loader, desc="training")):
             data, labels, index = batch["data"], batch["label"], batch["index"]
-            data = data
-            labels = labels
+            data = data.to(self.device)
+            labels = labels.to(self.device)
             self.optimizer.zero_grad()
 
             logits = self.model(data)
@@ -113,12 +116,14 @@ class GlobalClient:
         dataset_filter: str = "serbia",
     ) -> None:
         self.model = model
+        self.device = torch.device(0) if torch.cuda.is_available() else torch.device('cpu')
+        self.model.to(self.device)
         self.num_classes = num_classes
         self.dataset_filter = dataset_filter
         self.aggregator = Aggregator()
         self.results = init_results(self.num_classes)
         self.clients = [
-            FLCLient(copy.deepcopy(self.model), lmdb_path, csv_path)
+            FLCLient(copy.deepcopy(self.model), lmdb_path, csv_path, device=self.device)
             for csv_path in csv_paths
         ]
         self.validation_set = Ben19Dataset(
@@ -155,7 +160,7 @@ class GlobalClient:
 
         with torch.no_grad():
             for batch_idx, batch in enumerate(tqdm(self.val_loader, desc="test")):
-                data = batch["data"]
+                data = batch["data"].to(self.device)
                 labels = batch["label"].numpy()
 
                 logits = self.model(data)
