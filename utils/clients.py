@@ -61,7 +61,7 @@ class FLCLient:
         self.model = copy.deepcopy(model)
 
     def train_one_round(self, epochs: int):
-        state_before = self.model.state_dict()
+        state_before = copy.deepcopy(self.model.state_dict())
 
         # optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001, weight_decay=0)
         # criterion = torch.nn.BCEWithLogitsLoss(reduction="mean")
@@ -183,4 +183,8 @@ class GlobalClient:
         update_aggregation = self.aggregator.fed_avg(model_updates)
 
         # update the global model
-        self.model.load_state_dict(update_aggregation)
+        global_state_dict = self.model.state_dict()
+        for key, value in global_state_dict.items():
+            update = update_aggregation[key]
+            global_state_dict[key] = value + update
+        self.model.load_state_dict(global_state_dict)

@@ -75,16 +75,17 @@ def create_model_comparison_plot(
     show: bool = True,
     save_micro: str = None,
     save_macro: str = None,
+    labels: list[str] = None,
 ):
     micro_fig, micro_ax = plt.subplots(figsize=(6, 4))
     macro_fig, macro_ax = plt.subplots(figsize=(6, 4))
 
     # Create plots for micro and macro data
     create_plot(
-        data["micro avg"], axis=micro_ax, fields=model_types, ylab="F1-Score in %"
+        data["micro avg"], axis=micro_ax, fields=model_types, ylab="F1-Score in %", labels=labels
     )
     create_plot(
-        data["macro avg"], axis=macro_ax, fields=model_types, ylab="F1-Score in %"
+        data["macro avg"], axis=macro_ax, fields=model_types, ylab="F1-Score in %", labels=labels
     )
 
     # adjust figure name etc.
