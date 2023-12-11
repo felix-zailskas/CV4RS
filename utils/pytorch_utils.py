@@ -17,7 +17,7 @@ def start_cuda(cuda_no):
 
 def get_keys(num_cls):
     """Helper Function to generate keys from sklearn report."""
-    primary_keys = list(map(str, range(num_cls))) + ["micro avg", "macro avg"]
+    primary_keys = list(map(str, range(num_cls))) + ["micro avg", "macro avg", "weighted avg"]
     secondary_keys = ["precision", "recall", "f1-score", "support"]
     return primary_keys, secondary_keys
 
