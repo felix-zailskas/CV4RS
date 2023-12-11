@@ -36,6 +36,7 @@ class FLCLient:
         self,
         model: torch.nn.Module,
         lmdb_path: str,
+        val_path: str,
         csv_path: list[str],
         batch_size: int = 128,
         num_workers: int = 0,
@@ -43,13 +44,18 @@ class FLCLient:
         optimizer_kwargs: dict = {"lr": 0.001, "weight_decay": 0},
         criterion_constructor: callable = torch.nn.BCEWithLogitsLoss,
         criterion_kwargs: dict = {"reduction": "mean"},
-        device: torch.device = torch.device('cpu')
+        num_classes: int = 19,
+        device: torch.device = torch.device('cpu'),
+        dataset_filter: str = "serbia",
     ) -> None:
         self.model = model
         self.optimizer_constructor = optimizer_constructor
         self.optimizer_kwargs = optimizer_kwargs
         self.criterion_constructor = criterion_constructor
         self.criterion_kwargs = criterion_kwargs
+        self.num_classes = num_classes
+        self.dataset_filter = dataset_filter
+        self.results = init_results(self.num_classes)
         self.dataset = Ben19Dataset(lmdb_path, csv_path)
         self.train_loader = DataLoader(
             self.dataset,
@@ -59,6 +65,17 @@ class FLCLient:
             pin_memory=True,
         )
         self.device = device
+
+        self.validation_set = Ben19Dataset(
+            lmdb_path=lmdb_path, csv_path=val_path, img_transform="default"
+        )
+        self.val_loader = DataLoader(
+            self.validation_set,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=False,
+            pin_memory=True,
+        )
 
     def set_model(self, model: torch.nn.Module):
         self.model = copy.deepcopy(model)
@@ -76,6 +93,9 @@ class FLCLient:
             print("-" * 10)
 
             self.train_epoch()
+
+        report = self.validation_round()
+        self.results = update_results(self.results, report, self.num_classes)
 
         state_after = self.model.state_dict()
 
@@ -101,7 +121,35 @@ class FLCLient:
             loss = self.criterion(logits, labels)
             loss.backward()
             self.optimizer.step()
+    
+    def validation_round(self):
+        self.model.eval()
+        y_true = []
+        predicted_probs = []
 
+        with torch.no_grad():
+            for batch_idx, batch in enumerate(tqdm(self.val_loader, desc="test")):
+                data = batch["data"].to(self.device)
+                labels = batch["label"].numpy()
+
+                logits = self.model(data)
+                probs = torch.sigmoid(logits).cpu().numpy()
+
+                predicted_probs += list(probs)
+
+                y_true += list(labels)
+
+        predicted_probs = np.asarray(predicted_probs)
+        y_predicted = (predicted_probs >= 0.5).astype(np.float32)
+
+        y_true = np.asarray(y_true)
+        report = get_classification_report(
+            y_true, y_predicted, predicted_probs, self.dataset_filter
+        )
+        return report
+    
+    def get_validation_results(self):
+        return self.results
 
 class GlobalClient:
     def __init__(
@@ -123,7 +171,7 @@ class GlobalClient:
         self.aggregator = Aggregator()
         self.results = init_results(self.num_classes)
         self.clients = [
-            FLCLient(copy.deepcopy(self.model), lmdb_path, csv_path, device=self.device)
+            FLCLient(copy.deepcopy(self.model), lmdb_path, val_path, csv_path, num_classes=num_classes, dataset_filter=dataset_filter, device=self.device)
             for csv_path in csv_paths
         ]
         self.validation_set = Ben19Dataset(
@@ -151,7 +199,8 @@ class GlobalClient:
             for client in self.clients:
                 client.set_model(self.model)
         
-        return self.results
+        client_results = [client.get_validation_results() for client in self.clients]
+        return self.results, client_results
 
     def validation_round(self):
         self.model.eval()
