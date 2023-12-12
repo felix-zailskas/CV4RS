@@ -4,6 +4,12 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import time
+from datetime import datetime
+
+from timm.models.convmixer import ConvMixer
+from timm.models.mlp_mixer import MlpMixer
+from models.poolformer import PoolFormer
 
 from utils.pytorch_datasets import Ben19Dataset
 from utils.pytorch_utils import (
@@ -13,6 +19,7 @@ from utils.pytorch_utils import (
     update_results,
     start_cuda
 )
+
 
 
 class Aggregator:
@@ -162,6 +169,8 @@ class GlobalClient:
         num_workers: int = 0,
         num_classes: int = 19,
         dataset_filter: str = "serbia",
+        state_dict_path: str = None,
+        results_path: str = None
     ) -> None:
         self.model = model
         self.device = torch.device(0) if torch.cuda.is_available() else torch.device('cpu')
@@ -184,8 +193,26 @@ class GlobalClient:
             shuffle=False,
             pin_memory=True,
         )
+        
+        dt = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        if state_dict_path is None:
+            if isinstance(model, ConvMixer):
+                self.state_dict_path = f'checkpoints/global_convmixer_{dt}.pkl'
+            elif isinstance(model, MlpMixer):
+                self.state_dict_path = f'checkpoints/global_mlpmixer_{dt}.pkl'
+            elif isinstance(model, PoolFormer):
+                self.state_dict_path = f'checkpoints/global_poolformer_{dt}.pkl'
+
+        if results_path is None:
+            if isinstance(model, ConvMixer):
+                self.results_path = f'results/convmixer_results_{dt}.pkl'
+            elif isinstance(model, MlpMixer):
+                self.results_path = f'checkpoints/mlpmixer_results_{dt}.pkl'
+            elif isinstance(model, PoolFormer):
+                self.results_path = f'checkpoints/poolformer_results_{dt}.pkl'
 
     def train(self, communication_rounds: int, epochs: int):
+        start = time.perf_counter()
         for com_round in range(1, communication_rounds + 1):
             print("Round {}/{}".format(com_round, communication_rounds))
             print("-" * 10)
@@ -198,9 +225,12 @@ class GlobalClient:
 
             for client in self.clients:
                 client.set_model(self.model)
-        
-        client_results = [client.get_validation_results() for client in self.clients]
-        return self.results, client_results
+        self.train_time = time.perf_counter() - start
+
+        self.client_results = [client.get_validation_results() for client in self.clients]
+        self.save_state_dict()
+        self.save_results()
+        return self.results, self.client_results
 
     def validation_round(self):
         self.model.eval()
@@ -242,3 +272,10 @@ class GlobalClient:
             update = update_aggregation[key].to(self.device)
             global_state_dict[key] = value + update
         self.model.load_state_dict(global_state_dict)
+
+    def save_state_dict(self):
+        torch.save(self.model.state_dict(), self.state_dict_path)
+
+    def save_results(self):
+        res = {'global':self.results, 'clients':self.client_results, 'train_time': self.train_time}
+        torch.save(res, self.results_path)
