@@ -10,6 +10,7 @@ from datetime import datetime
 from timm.models.convmixer import ConvMixer
 from timm.models.mlp_mixer import MlpMixer
 from models.poolformer import PoolFormer
+from utils.pytorch_models import ResNet18
 
 from utils.pytorch_datasets import Ben19Dataset
 from utils.pytorch_utils import (
@@ -202,14 +203,18 @@ class GlobalClient:
                 self.state_dict_path = f'checkpoints/global_mlpmixer_{dt}.pkl'
             elif isinstance(model, PoolFormer):
                 self.state_dict_path = f'checkpoints/global_poolformer_{dt}.pkl'
+            elif isinstance(model, ResNet18):
+                self.state_dict_path = f'checkpoints/global_resnet18_{dt}.pkl'
 
         if results_path is None:
             if isinstance(model, ConvMixer):
                 self.results_path = f'results/convmixer_results_{dt}.pkl'
             elif isinstance(model, MlpMixer):
-                self.results_path = f'checkpoints/mlpmixer_results_{dt}.pkl'
+                self.results_path = f'results/mlpmixer_results_{dt}.pkl'
             elif isinstance(model, PoolFormer):
-                self.results_path = f'checkpoints/poolformer_results_{dt}.pkl'
+                self.results_path = f'results/poolformer_results_{dt}.pkl'
+            elif isinstance(model, ResNet18):
+                self.results_path = f'results/resnet18_results_{dt}.pkl'
 
     def train(self, communication_rounds: int, epochs: int):
         start = time.perf_counter()
