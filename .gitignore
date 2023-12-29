@@ -49,6 +49,7 @@ bin/
 
 # Env files
 *.env
+*venv
 
 # data files to save space
 **/data/*

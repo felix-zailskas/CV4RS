@@ -117,16 +117,25 @@ class FLCLient:
 
         return model_update
 
+    def change_sizes(self, labels):
+        new_labels=np.zeros((len(labels[0]),19))
+        for i in range(len(labels[0])): #128
+            for j in range(len(labels)): #19
+                new_labels[i,j] =  int(labels[j][i])
+        return torch.from_numpy(new_labels)
+    
     def train_epoch(self):
         self.model.train()
         for idx, batch in enumerate(tqdm(self.train_loader, desc="training")):
             data, labels, index = batch["data"], batch["label"], batch["index"]
-            data = data.to(self.device)
-            labels = labels.to(self.device)
+            data = data.cuda()
+            label_new=np.copy(labels)
+            label_new=self.change_sizes(label_new)
+            label_new = label_new.cuda()
             self.optimizer.zero_grad()
 
             logits = self.model(data)
-            loss = self.criterion(logits, labels)
+            loss = self.criterion(logits, label_new)
             loss.backward()
             self.optimizer.step()
     

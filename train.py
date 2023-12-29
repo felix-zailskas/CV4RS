@@ -13,21 +13,7 @@ from utils.pytorch_utils import start_cuda
 
 
 def train():
-	c1_path = Path("data/c1_train.csv")
-	c2_path = Path("data/c2_train.csv")
-	c3_path = Path("data/c3_train.csv")
-	if not (c1_path.exists() and c2_path.exists() and c3_path.exists()):
-	    df = pd.read_csv("data/train.csv", header=None)
-
-	    seed = 42
-
-	    df_c1, temp = train_test_split(df, test_size=(2/3), random_state=seed)
-	    df_c2, df_c3 = train_test_split(temp, test_size=0.5, random_state=seed)
-
-	    df_c1.to_csv("data/c1_train.csv", index=False, header=None)
-	    df_c2.to_csv("data/c2_train.csv", index=False, header=None)
-	    df_c3.to_csv("data/c3_train.csv", index=False, header=None)
-	
+	csv_paths = [str(p) for p in Path('data/countries/').glob('*train.csv')]
 	cuda_no = 1
 	batch_size = 128
 	num_workers = 0
@@ -41,8 +27,8 @@ def train():
 	global_client_mlp_mixer = GlobalClient(
 	    model=mlp_mixer,
 	    lmdb_path="/faststorage/BigEarthNet_S1_S2/BEN_S1_S2.lmdb",
-	    val_path="data/test.csv",
-	    csv_paths=["data/c1_train.csv", "data/c2_train.csv", "data/c3_train.csv"],
+	    val_path="data/countries/all_test.csv",
+	    csv_paths=csv_paths,
 	)
 	global_mlp_mixer_results, global_mlp_mixer_client_results = global_client_mlp_mixer.train(communication_rounds=communication_rounds, epochs=epochs)
 
