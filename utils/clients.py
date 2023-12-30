@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import time
 from datetime import datetime
+import pickle
 
 from timm.models.convmixer import ConvMixer
 from timm.models.mlp_mixer import MlpMixer
@@ -122,7 +123,7 @@ class FLCLient:
         for i in range(len(labels[0])): #128
             for j in range(len(labels)): #19
                 new_labels[i,j] =  int(labels[j][i])
-        return torch.from_numpy(new_labels)
+        return new_labels
     
     def train_epoch(self):
         self.model.train()
@@ -131,7 +132,7 @@ class FLCLient:
             data = data.cuda()
             label_new=np.copy(labels)
             label_new=self.change_sizes(label_new)
-            label_new = label_new.cuda()
+            label_new = torch.from_numpy(label_new).cuda()
             self.optimizer.zero_grad()
 
             logits = self.model(data)
@@ -147,14 +148,16 @@ class FLCLient:
         with torch.no_grad():
             for batch_idx, batch in enumerate(tqdm(self.val_loader, desc="test")):
                 data = batch["data"].to(self.device)
-                labels = batch["label"].numpy()
+                labels = batch["label"]
+                label_new=np.copy(labels)
+                label_new=self.change_sizes(label_new)
 
                 logits = self.model(data)
                 probs = torch.sigmoid(logits).cpu().numpy()
 
                 predicted_probs += list(probs)
 
-                y_true += list(labels)
+                y_true += list(label_new)
 
         predicted_probs = np.asarray(predicted_probs)
         y_predicted = (predicted_probs >= 0.5).astype(np.float32)
@@ -246,6 +249,14 @@ class GlobalClient:
         self.save_results()
         return self.results, self.client_results
 
+    def change_sizes(self, labels):
+        new_labels=np.zeros((len(labels[0]),19))
+        for i in range(len(labels[0])): #128
+            for j in range(len(labels)): #19
+                new_labels[i,j] =  int(labels[j][i])
+        return new_labels
+    
+
     def validation_round(self):
         self.model.eval()
         y_true = []
@@ -254,14 +265,16 @@ class GlobalClient:
         with torch.no_grad():
             for batch_idx, batch in enumerate(tqdm(self.val_loader, desc="test")):
                 data = batch["data"].to(self.device)
-                labels = batch["label"].numpy()
+                labels = batch["label"]
+                label_new=np.copy(labels)
+                label_new=self.change_sizes(label_new)
 
                 logits = self.model(data)
                 probs = torch.sigmoid(logits).cpu().numpy()
 
                 predicted_probs += list(probs)
 
-                y_true += list(labels)
+                y_true += list(label_new)
 
         predicted_probs = np.asarray(predicted_probs)
         y_predicted = (predicted_probs >= 0.5).astype(np.float32)
@@ -293,3 +306,5 @@ class GlobalClient:
     def save_results(self):
         res = {'global':self.results, 'clients':self.client_results, 'train_time': self.train_time}
         torch.save(res, self.results_path)
+        #with open(self.results_path, 'wb') as f:
+         #   pickle.dump(res, f)
