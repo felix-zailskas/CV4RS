@@ -187,6 +187,7 @@ class GlobalClient:
     ) -> None:
         self.model = model
         self.device = torch.device(0) if torch.cuda.is_available() else torch.device('cpu')
+        print(f'Using device: {self.device}')
         self.model.to(self.device)
         self.num_classes = num_classes
         self.dataset_filter = dataset_filter

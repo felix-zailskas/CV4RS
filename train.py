@@ -1,8 +1,6 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from pathlib import Path
-import time
-import torch
 from utils.pytorch_models import ResNet18
 from models.poolformer import create_poolformer_s12
 from models.ConvMixer import create_convmixer_1024_20
@@ -17,12 +15,11 @@ def train():
 	cuda_no = 1
 	batch_size = 128
 	num_workers = 0
-	epochs = 1
-	communication_rounds = 1
+	epochs = 3
+	communication_rounds = 40
 
 	channels = 10
 	num_classes = 19
-	dataset_filter = "serbia"
 	mlp_mixer = create_mlp_mixer(channels, num_classes)
 	global_client_mlp_mixer = GlobalClient(
 	    model=mlp_mixer,

@@ -30,5 +30,5 @@ def ConvMixer(dim, depth, channels, kernel_size=9, patch_size=7, n_classes=1000)
     )
 
 def create_convmixer_1024_20(channels, num_classes, pretrained=False):
-    convmixer = timm.create_model('convmixer_1024_20_ks9_p14', pretrained=pretrained, in_chans=channels, num_classes=num_classes)
+    convmixer = timm.create_model('convmixer_1536_20', pretrained=pretrained, in_chans=channels, num_classes=num_classes)
     return convmixer
