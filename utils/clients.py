@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import time
 from datetime import datetime
-import pickle
+from pathlib import Path 
 
 from timm.models.convmixer import ConvMixer
 from timm.models.mlp_mixer import MlpMixer
@@ -246,8 +246,8 @@ class GlobalClient:
         self.train_time = time.perf_counter() - start
 
         self.client_results = [client.get_validation_results() for client in self.clients]
-        self.save_state_dict()
         self.save_results()
+        self.save_state_dict()
         return self.results, self.client_results
 
     def change_sizes(self, labels):
@@ -302,10 +302,12 @@ class GlobalClient:
         self.model.load_state_dict(global_state_dict)
 
     def save_state_dict(self):
+        if not Path(self.state_dict_path).parent.is_dir():
+            Path(self.state_dict_path).parent.mkdir(parents=True)
         torch.save(self.model.state_dict(), self.state_dict_path)
 
     def save_results(self):
+        if not Path(self.results_path).parent.is_dir():
+            Path(self.results_path).parent.mkdir(parents=True)  
         res = {'global':self.results, 'clients':self.client_results, 'train_time': self.train_time}
         torch.save(res, self.results_path)
-        #with open(self.results_path, 'wb') as f:
-         #   pickle.dump(res, f)
