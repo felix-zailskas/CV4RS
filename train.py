@@ -3,7 +3,7 @@ from sklearn.model_selection import train_test_split
 from pathlib import Path
 from utils.pytorch_models import ResNet18
 from models.poolformer import create_poolformer_s12
-from models.ConvMixer import create_convmixer_1024_20
+from models.ConvMixer import create_convmixer
 from models.MLPMixer import create_mlp_mixer
 from utils.clients import GlobalClient
 from utils.pytorch_utils import start_cuda
@@ -21,6 +21,7 @@ def train():
 	channels = 10
 	num_classes = 19
 	mlp_mixer = create_mlp_mixer(channels, num_classes)
+	# mlp_mixer = create_convmixer_1536_20(channels, num_classes, pretrained=False)
 	global_client_mlp_mixer = GlobalClient(
 	    model=mlp_mixer,
 	    lmdb_path="/faststorage/BigEarthNet_S1_S2/BEN_S1_S2.lmdb",
