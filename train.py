@@ -11,6 +11,7 @@ from utils.pytorch_utils import start_cuda
 
 
 def train():
+	# distr_type = "countries"
 	distr_type = "countries_random"
 	csv_paths = [str(p) for p in Path(f'data/{distr_type}/').glob('*train*.csv')]
 	cuda_no = 1
@@ -21,8 +22,8 @@ def train():
 
 	channels = 10
 	num_classes = 19
-	dataset_filter = "serbia"
 	# model = create_mlp_mixer(channels, num_classes)
+	# model = create_convmixer(channels=channels, num_classes=num_classes, pretrained=False)
 	# model = create_poolformer_s12(in_chans=channels, num_classes=num_classes)
 	model = ResNet50("ResNet50", channels=channels, num_cls=num_classes, pretrained=False)
 	global_client = GlobalClient(
@@ -32,7 +33,7 @@ def train():
 		csv_paths=csv_paths,
 	)
 	global_model, global_results = global_client.train(communication_rounds=communication_rounds, epochs=epochs)
-
+	print(global_results)
 
 
 if __name__ == '__main__':
