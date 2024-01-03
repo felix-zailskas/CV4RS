@@ -58,6 +58,8 @@ class FLCLient:
         dataset_filter: str = "serbia",
     ) -> None:
         self.model = model
+        self.previous_model = model
+        self.global_model = model
         self.optimizer_constructor = optimizer_constructor
         self.optimizer_kwargs = optimizer_kwargs
         self.criterion_constructor = criterion_constructor
@@ -91,6 +93,7 @@ class FLCLient:
 
     def train_one_round(self, epochs: int, validate: bool = False):
         state_before = copy.deepcopy(self.model.state_dict())
+        self.global_model = copy.deepcopy(self.model) # save current model as global model
 
         # optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001, weight_decay=0)
         # criterion = torch.nn.BCEWithLogitsLoss(reduction="mean")
@@ -108,6 +111,7 @@ class FLCLient:
             self.results = update_results(self.results, report, self.num_classes)
 
         state_after = self.model.state_dict()
+        self.previous_model = copy.deepcopy(self.model) #save previous model for next iteration
 
         model_update = {}
         for key, value_before in state_before.items():
@@ -136,8 +140,20 @@ class FLCLient:
             label_new = torch.from_numpy(label_new).cuda()
             self.optimizer.zero_grad()
 
-            logits = self.model(data)
-            loss = self.criterion(logits, label_new)
+            l_sup = torch.nn.CrossEntropyLoss()(self.model(data), label_new)
+            z = self.model(data)
+            z_global = self.global_model(data)
+            z_prev = self.previous_model(data)
+
+            exp1 = torch.exp(torch.nn.functional.cosine_similarity(z,z_global) / 0.5)  #temperature default:0.5 ? 
+            exp2 = torch.exp(torch.nn.functional.cosine_similarity(z,z_prev) / 0.5)    #temperature default:0.5 ? 
+
+            l_con = -torch.log(exp1 / (exp1 + exp2))
+
+            loss = l_sup + 1 * l_con.sum() #µ default:1 ?
+
+            #logits = self.model(data)
+            #loss = self.criterion(logits, label_new)
             loss.backward()
             self.optimizer.step()
     
