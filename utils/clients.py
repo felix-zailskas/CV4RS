@@ -11,7 +11,7 @@ from pathlib import Path
 from timm.models.convmixer import ConvMixer
 from timm.models.mlp_mixer import MlpMixer
 from models.poolformer import PoolFormer
-from utils.pytorch_models import ResNet18
+from utils.pytorch_models import ResNet50
 
 from utils.pytorch_datasets import Ben19Dataset
 from utils.pytorch_utils import (
@@ -89,7 +89,7 @@ class FLCLient:
     def set_model(self, model: torch.nn.Module):
         self.model = copy.deepcopy(model)
 
-    def train_one_round(self, epochs: int):
+    def train_one_round(self, epochs: int, validate: bool = False):
         state_before = copy.deepcopy(self.model.state_dict())
 
         # optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001, weight_decay=0)
@@ -102,9 +102,10 @@ class FLCLient:
             print("-" * 10)
 
             self.train_epoch()
-
-        report = self.validation_round()
-        self.results = update_results(self.results, report, self.num_classes)
+        
+        if validate:
+            report = self.validation_round()
+            self.results = update_results(self.results, report, self.num_classes)
 
         state_after = self.model.state_dict()
 
@@ -216,7 +217,7 @@ class GlobalClient:
                 self.state_dict_path = f'checkpoints/global_mlpmixer_{dt}.pkl'
             elif isinstance(model, PoolFormer):
                 self.state_dict_path = f'checkpoints/global_poolformer_{dt}.pkl'
-            elif isinstance(model, ResNet18):
+            elif isinstance(model, ResNet50):
                 self.state_dict_path = f'checkpoints/global_resnet18_{dt}.pkl'
 
         if results_path is None:
@@ -226,7 +227,7 @@ class GlobalClient:
                 self.results_path = f'results/mlpmixer_results_{dt}.pkl'
             elif isinstance(model, PoolFormer):
                 self.results_path = f'results/poolformer_results_{dt}.pkl'
-            elif isinstance(model, ResNet18):
+            elif isinstance(model, ResNet50):
                 self.results_path = f'results/resnet18_results_{dt}.pkl'
 
     def train(self, communication_rounds: int, epochs: int):
