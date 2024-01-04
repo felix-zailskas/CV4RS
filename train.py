@@ -7,25 +7,40 @@ from models.ConvMixer import create_convmixer
 from models.MLPMixer import create_mlp_mixer
 from utils.clients import GlobalClient
 from utils.pytorch_utils import start_cuda
+import argparse
 
+def train(args):
 
-
-def train():
-	# distr_type = "countries"
-	distr_type = "countries_random"
+	if args.DS == 1:
+		distr_type = "countries_random" 
+	elif args.DS == 2:
+		distr_type = "countries"
+	else:
+		raise ValueError("Please specify Dataset")
+	
+	print(f"Using Dataset: {distr_type}")
 	csv_paths = [str(p) for p in Path(f'data/{distr_type}/').glob('*train*.csv')]
 	cuda_no = 1
 	batch_size = 128
 	num_workers = 0
 	epochs = 3
-	communication_rounds = 40
+	communication_rounds = 30
 
 	channels = 10
 	num_classes = 19
-	# model = create_mlp_mixer(channels, num_classes)
-	# model = create_convmixer(channels=channels, num_classes=num_classes, pretrained=False)
-	# model = create_poolformer_s12(in_chans=channels, num_classes=num_classes)
-	model = ResNet50("ResNet50", channels=channels, num_cls=num_classes, pretrained=False)
+
+	if args.model == 'mlpmixer':
+		model = create_mlp_mixer(channels, num_classes)
+	elif args.model == 'convmixer':
+		model = create_convmixer(channels=channels, num_classes=num_classes, pretrained=False)
+	elif args.model == 'poolformer':
+		model = create_poolformer_s12(in_chans=channels, num_classes=num_classes)
+	elif args.model == 'resnet':
+		model = ResNet50("ResNet50", channels=channels, num_cls=num_classes, pretrained=False)
+	else:
+		raise ValueError("Passed model name is not defined")
+	print(f'Using model: {type(model)}')
+
 	global_client = GlobalClient(
 		model=model,
 		lmdb_path="/faststorage/BigEarthNet_S1_S2/BEN_S1_S2.lmdb",
@@ -37,4 +52,10 @@ def train():
 
 
 if __name__ == '__main__':
-    train()
+    
+	parser = argparse.ArgumentParser()
+	parser.add_argument('-DS', type=int, default=None, choices=[1,2])
+	parser.add_argument('--model', type=str, default=None, choices=["mlpmixer", "convmixer", "poolformer", "resnet50"])
+	args = parser.parse_args()
+
+	train(args)

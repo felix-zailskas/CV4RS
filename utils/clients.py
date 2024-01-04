@@ -244,6 +244,11 @@ class GlobalClient:
 
             for client in self.clients:
                 client.set_model(self.model)
+        
+        if com_round % 5 == 0:
+                self.save_state_dict()
+                self.save_results()
+        
         self.train_time = time.perf_counter() - start
 
         self.client_results = [client.get_validation_results() for client in self.clients]
