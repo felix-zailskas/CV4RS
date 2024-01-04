@@ -8,7 +8,8 @@ import time
 from datetime import datetime
 from pathlib import Path 
 
-from timm.models.convmixer import ConvMixer
+# from timm.models.convmixer import ConvMixer
+from models.ConvMixer import ConvMixer
 from timm.models.mlp_mixer import MlpMixer
 from models.poolformer import PoolFormer
 from utils.pytorch_models import ResNet50
@@ -141,9 +142,9 @@ class FLCLient:
             self.optimizer.zero_grad()
 
             l_sup = torch.nn.CrossEntropyLoss()(self.model(data), label_new)
-            z = self.model(data)
-            z_global = self.global_model(data)
-            z_prev = self.previous_model(data)
+            z = self.model(data, features_only=True)
+            z_global = self.global_model(data, features_only=True)
+            z_prev = self.previous_model(data, features_only=True)
 
             exp1 = torch.exp(torch.nn.functional.cosine_similarity(z,z_global) / 0.5)  #temperature default:0.5 ? 
             exp2 = torch.exp(torch.nn.functional.cosine_similarity(z,z_prev) / 0.5)    #temperature default:0.5 ? 
