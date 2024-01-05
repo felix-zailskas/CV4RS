@@ -236,7 +236,10 @@ class GlobalClient:
             print("Round {}/{}".format(com_round, communication_rounds))
             print("-" * 10)
 
+            comm_start = time.perf_counter()
             self.communication_round(epochs)
+            comm_time = time.perf_counter() - comm_start
+            print(f"Time communication round: {comm_time}")
             report = self.validation_round()
 
             self.results = update_results(self.results, report, self.num_classes)
@@ -245,9 +248,9 @@ class GlobalClient:
             for client in self.clients:
                 client.set_model(self.model)
         
-        if com_round % 5 == 0:
+            if com_round % 5 == 0:
                 self.save_state_dict()
-                self.save_results()
+                # self.save_results()
         
         self.train_time = time.perf_counter() - start
 
