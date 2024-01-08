@@ -55,7 +55,7 @@ if __name__ == '__main__':
     
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-DS', type=int, default=None, choices=[1,2])
-	parser.add_argument('--model', type=str, default=None, choices=["mlpmixer", "convmixer", "poolformer", "resnet50"])
+	parser.add_argument('--model', type=str, default=None, choices=["mlpmixer", "convmixer", "poolformer", "resnet"])
 	args = parser.parse_args()
 
 	train(args)

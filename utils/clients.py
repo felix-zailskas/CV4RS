@@ -208,6 +208,7 @@ class GlobalClient:
             shuffle=False,
             pin_memory=True,
         )
+        self.train_time = None
         
         dt = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         if state_dict_path is None:
@@ -218,7 +219,7 @@ class GlobalClient:
             elif isinstance(model, PoolFormer):
                 self.state_dict_path = f'checkpoints/global_poolformer_{dt}.pkl'
             elif isinstance(model, ResNet50):
-                self.state_dict_path = f'checkpoints/global_resnet18_{dt}.pkl'
+                self.state_dict_path = f'checkpoints/global_resnet50_{dt}.pkl'
 
         if results_path is None:
             if isinstance(model, ConvMixer):
@@ -228,18 +229,22 @@ class GlobalClient:
             elif isinstance(model, PoolFormer):
                 self.results_path = f'results/poolformer_results_{dt}.pkl'
             elif isinstance(model, ResNet50):
-                self.results_path = f'results/resnet18_results_{dt}.pkl'
+                self.results_path = f'results/resnet50_results_{dt}.pkl'
 
     def train(self, communication_rounds: int, epochs: int):
+        self.comm_times = []
         start = time.perf_counter()
         for com_round in range(1, communication_rounds + 1):
             print("Round {}/{}".format(com_round, communication_rounds))
             print("-" * 10)
 
+            # communication round
             comm_start = time.perf_counter()
             self.communication_round(epochs)
             comm_time = time.perf_counter() - comm_start
             print(f"Time communication round: {comm_time}")
+            self.comm_times.append(comm_time)
+            
             report = self.validation_round()
 
             self.results = update_results(self.results, report, self.num_classes)
@@ -250,6 +255,7 @@ class GlobalClient:
         
             if com_round % 5 == 0:
                 self.save_state_dict()
+                self.client_results = [client.get_validation_results() for client in self.clients]
                 # self.save_results()
         
         self.train_time = time.perf_counter() - start
@@ -318,5 +324,5 @@ class GlobalClient:
     def save_results(self):
         if not Path(self.results_path).parent.is_dir():
             Path(self.results_path).parent.mkdir(parents=True)  
-        res = {'global':self.results, 'clients':self.client_results, 'train_time': self.train_time}
+        res = {'global':self.results, 'clients':self.client_results, 'train_time': self.train_time, 'communication_times':self.comm_times}
         torch.save(res, self.results_path)
