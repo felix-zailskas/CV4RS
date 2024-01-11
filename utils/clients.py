@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import time
+import threading
 from datetime import datetime
 from pathlib import Path 
 
@@ -225,6 +226,7 @@ class GlobalClient:
             shuffle=False,
             pin_memory=True,
         )
+        self.gpu_locks = [threading.Lock() for _ in range(torch.cuda.device_count())]
         
         dt = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         if state_dict_path is None:
@@ -304,11 +306,35 @@ class GlobalClient:
         )
         return report
 
+    def train_client_on_device(self, client, epochs, gpu_id):
+        with torch.cuda.device(gpu_id):
+            model_update = client.train_one_round(epochs)
+        return model_update
+    
+    def worker(self, client, gpu_id, model_updates):
+        with self.gpu_locks[gpu_id]:
+            model_update = self.train_client_on_device(client, gpu_id)
+        model_updates.append(model_update)
+        
+    
     def communication_round(self, epochs: int):
         # here the clients train
-        # TODO: could be parallelized
-        model_updates = [client.train_one_round(epochs) for client in self.clients]
-
+        # model_updates = [client.train_one_round(epochs) for client in self.clients]
+        
+        model_updates = []
+        for client in self.clients:
+            client_training = False
+            while not client_training:
+                for gpu_id in range(len(self.available_gpus)):
+                    if not self.gpu_locks[gpu_id].locked():
+                        threading.Thread(target=self.worker, args=(client, gpu_id, model_updates)).start()
+                        client_training = True
+                        break
+        
+        for thread in threading.enumerate():
+            if thread != threading.current_thread():
+                thread.join()
+                    
         # parameter aggregation
         update_aggregation = self.aggregator.fed_avg(model_updates)
 
