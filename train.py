@@ -14,11 +14,12 @@ def train():
 	# distr_type = "countries"
 	distr_type = "countries_random"
 	csv_paths = [str(p) for p in Path(f'data/{distr_type}/').glob('*train*.csv')]
+	csv_paths = csv_paths[:3]
 	cuda_no = 1
 	batch_size = 128
 	num_workers = 0
-	epochs = 3
-	communication_rounds = 40
+	epochs = 2
+	communication_rounds = 1
 
 	channels = 10
 	num_classes = 19

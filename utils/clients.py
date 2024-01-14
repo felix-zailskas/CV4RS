@@ -93,7 +93,7 @@ class FLCLient:
     def set_model(self, model: torch.nn.Module):
         self.model = copy.deepcopy(model)
 
-    def train_one_round(self, epochs: int, validate: bool = False):
+    def train_one_round(self, epochs: int, training_device = None, validate: bool = False):
         state_before = copy.deepcopy(self.model.state_dict())
         self.global_model = copy.deepcopy(self.model) # save current model as global model
 
@@ -106,10 +106,10 @@ class FLCLient:
             print("Epoch {}/{}".format(epoch, epochs))
             print("-" * 10)
 
-            self.train_epoch()
+            self.train_epoch(training_device)
         
         if validate:
-            report = self.validation_round()
+            report = self.validation_round(training_device)
             self.results = update_results(self.results, report, self.num_classes)
 
         state_after = self.model.state_dict()
@@ -132,14 +132,43 @@ class FLCLient:
                 new_labels[i,j] =  int(labels[j][i])
         return new_labels
     
-    def train_epoch(self):
+    def train_epoch(self, training_device = None):
         self.model.train()
-        for idx, batch in enumerate(tqdm(self.train_loader, desc="training")):
+        if training_device is None:
+            print("ERROR TRAINING DEVICE SHOULD NOT BE NONE")
+        for idx, batch in enumerate(tqdm(self.train_loader, desc=f"training {self} on device {training_device if self.device is None else self.device}")):
             data, labels, index = batch["data"], batch["label"], batch["index"]
-            data = data.cuda()
+            if training_device is None:
+                data = data.to(self.device)
+            else:
+                data = data.to(training_device)
             label_new=np.copy(labels)
             label_new=self.change_sizes(label_new)
-            label_new = torch.from_numpy(label_new).cuda()
+            if training_device is None:
+                label_new = torch.from_numpy(label_new).to(self.device)
+            else:
+                label_new = torch.from_numpy(label_new).to(training_device)
+            self.optimizer.zero_grad()
+
+            logits = self.model(data)
+            loss = self.criterion(logits, label_new)
+            loss.backward()
+            self.optimizer.step()
+            # ------ MOON INITIAL IMPLEMENTATION ----------
+            """
+            data, labels, index = batch["data"], batch["label"], batch["index"]
+            # data = data.cuda()
+            if training_device is None:
+                data = data.to(self.device)
+            else:
+                data = data.to(training_device)
+            label_new=np.copy(labels)
+            label_new=self.change_sizes(label_new)
+            # label_new = torch.from_numpy(label_new).cuda()
+            if training_device is None:
+                label_new = torch.from_numpy(label_new).to(self.device)
+            else:
+                label_new = torch.from_numpy(label_new).to(training_device)
             self.optimizer.zero_grad()
 
             l_sup = torch.nn.CrossEntropyLoss()(self.model(data), label_new)
@@ -158,15 +187,20 @@ class FLCLient:
             #loss = self.criterion(logits, label_new)
             loss.backward()
             self.optimizer.step()
+            """
     
-    def validation_round(self):
+    def validation_round(self, training_device = None):
         self.model.eval()
         y_true = []
         predicted_probs = []
 
         with torch.no_grad():
             for batch_idx, batch in enumerate(tqdm(self.val_loader, desc="test")):
-                data = batch["data"].to(self.device)
+                # data = batch["data"].to(self.device)
+                if training_device is None:
+                    data = batch["data"].to(self.device)
+                else:
+                    data = batch["data"].to(training_device)
                 labels = batch["label"]
                 label_new=np.copy(labels)
                 label_new=self.change_sizes(label_new)
@@ -227,6 +261,7 @@ class GlobalClient:
             pin_memory=True,
         )
         self.gpu_locks = [threading.Lock() for _ in range(torch.cuda.device_count())]
+        # self.gpu_locks = [threading.Lock() for _ in range(1)]
         
         dt = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         if state_dict_path is None:
@@ -308,13 +343,17 @@ class GlobalClient:
 
     def train_client_on_device(self, client, epochs, gpu_id):
         with torch.cuda.device(gpu_id):
-            model_update = client.train_one_round(epochs)
+            model_update = client.train_one_round(epochs, torch.device(gpu_id))
         return model_update
     
-    def worker(self, client, gpu_id, model_updates):
-        with self.gpu_locks[gpu_id]:
-            model_update = self.train_client_on_device(client, gpu_id)
+    def worker(self, client, gpu_id, model_updates, epochs):
+        # with self.gpu_locks[gpu_id]:
+        print(f"Lock : {self.gpu_locks[gpu_id].locked()}")
+        print(f"Client {client} training on device #{gpu_id}")
+        model_update = self.train_client_on_device(client, epochs, gpu_id)
+        print(f"Lock : {self.gpu_locks[gpu_id].locked()}")
         model_updates.append(model_update)
+        self.gpu_locks[gpu_id].release()
         
     
     def communication_round(self, epochs: int):
@@ -325,9 +364,10 @@ class GlobalClient:
         for client in self.clients:
             client_training = False
             while not client_training:
-                for gpu_id in range(len(self.available_gpus)):
+                for gpu_id in range(len(self.gpu_locks)):
                     if not self.gpu_locks[gpu_id].locked():
-                        threading.Thread(target=self.worker, args=(client, gpu_id, model_updates)).start()
+                        self.gpu_locks[gpu_id].acquire()
+                        threading.Thread(target=self.worker, args=(client, gpu_id, model_updates, epochs)).start()
                         client_training = True
                         break
         
