@@ -356,12 +356,12 @@ class GlobalClient:
     
     def worker(self, client, gpu_id, model_updates, epochs):
         # with self.gpu_locks[gpu_id]:
-        print(f"Lock : {self.gpu_locks[gpu_id].locked()}")
+        print(f"Lock pre client (should be true): {self.gpu_locks[gpu_id].locked()}")
         print(f"Client {client} training on device #{gpu_id}")
         model_update = self.train_client_on_device(client, epochs, gpu_id)
-        print(f"Lock : {self.gpu_locks[gpu_id].locked()}")
-        model_updates.append(model_update)
         self.gpu_locks[gpu_id].release()
+        print(f"Lock post client (should be false): {self.gpu_locks[gpu_id].locked()}")
+        model_updates.append(model_update)
         
     
     def communication_round(self, epochs: int):
@@ -379,19 +379,22 @@ class GlobalClient:
                         client_training = True
                         break
         
+        print("Done with training clients")
         for thread in threading.enumerate():
             if thread != threading.current_thread():
                 thread.join()
-                    
+        print("Threads have joined")
+        
         # parameter aggregation
         update_aggregation = self.aggregator.fed_avg(model_updates)
-
+        print("Aggregation complete")
         # update the global model
         global_state_dict = self.model.state_dict()
         for key, value in global_state_dict.items():
             update = update_aggregation[key].to(self.device)
             global_state_dict[key] = value + update
         self.model.load_state_dict(global_state_dict)
+        print("Comm round done")
 
     def save_state_dict(self):
         if not Path(self.state_dict_path).parent.is_dir():

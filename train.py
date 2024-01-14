@@ -18,7 +18,7 @@ def train():
 	cuda_no = 1
 	batch_size = 128
 	num_workers = 0
-	epochs = 2
+	epochs = 1
 	communication_rounds = 1
 
 	channels = 10
