@@ -100,6 +100,7 @@ class FLCLient:
             self.model.to(self.device)
             self.global_model.to(self.device)
         else:
+            print(f"Putting model onto {training_device}")
             self.model.to(training_device)
             self.global_model.to(training_device)
 
@@ -142,11 +143,12 @@ class FLCLient:
         self.model.train()
         if training_device is None:
             print("ERROR TRAINING DEVICE SHOULD NOT BE NONE")
-        for idx, batch in enumerate(tqdm(self.train_loader, desc=f"training {self} on device {training_device if self.device is None else self.device}")):
+        for idx, batch in enumerate(tqdm(self.train_loader, desc=f"training {self} on device {training_device if training_device is not None else self.device}")):
             data, labels, index = batch["data"], batch["label"], batch["index"]
             if training_device is None:
                 data = data.to(self.device)
             else:
+                print(f"Training model on {training_device}")
                 data = data.to(training_device)
             label_new=np.copy(labels)
             label_new=self.change_sizes(label_new)
