@@ -96,6 +96,12 @@ class FLCLient:
     def train_one_round(self, epochs: int, training_device = None, validate: bool = False):
         state_before = copy.deepcopy(self.model.state_dict())
         self.global_model = copy.deepcopy(self.model) # save current model as global model
+        if training_device is None:
+            self.model.to(self.device)
+            self.global_model.to(self.device)
+        else:
+            self.model.to(training_device)
+            self.global_model.to(training_device)
 
         # optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001, weight_decay=0)
         # criterion = torch.nn.BCEWithLogitsLoss(reduction="mean")
