@@ -369,22 +369,25 @@ class GlobalClient:
         # model_updates = [client.train_one_round(epochs) for client in self.clients]
         
         model_updates = []
+        threads = []
         for client in self.clients:
             client_training = False
             while not client_training:
                 for gpu_id in range(len(self.gpu_locks)):
                     if not self.gpu_locks[gpu_id].locked():
                         self.gpu_locks[gpu_id].acquire()
-                        threading.Thread(target=self.worker, args=(client, gpu_id, model_updates, epochs)).start()
+                        thread = threading.Thread(target=self.worker, args=(client, gpu_id, model_updates, epochs))
+                        threads.append(thread)
+                        thread.start()
                         client_training = True
                         break
+                
         
         print("Done with training clients")
-        for thread in threading.enumerate():
-            if thread != threading.current_thread():
-                thread.join()
+        for t in threads:
+            t.join()
         print("Threads have joined")
-        
+                
         # parameter aggregation
         update_aggregation = self.aggregator.fed_avg(model_updates)
         print("Aggregation complete")
