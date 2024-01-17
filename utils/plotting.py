@@ -82,10 +82,18 @@ def create_model_comparison_plot(
 
     # Create plots for micro and macro data
     create_plot(
-        data["micro avg"], axis=micro_ax, fields=model_types, ylab="F1-Score in %", labels=labels
+        data["micro avg"],
+        axis=micro_ax,
+        fields=model_types,
+        ylab="F1-Score in %",
+        labels=labels,
     )
     create_plot(
-        data["macro avg"], axis=macro_ax, fields=model_types, ylab="F1-Score in %", labels=labels
+        data["macro avg"],
+        axis=macro_ax,
+        fields=model_types,
+        ylab="F1-Score in %",
+        labels=labels,
     )
 
     # adjust figure name etc.
