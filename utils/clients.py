@@ -14,7 +14,7 @@ from models.ConvMixer import ConvMixer
 from timm.models.mlp_mixer import MlpMixer
 from models.poolformer import PoolFormer
 from utils.pytorch_models import ResNet50
-
+from logger.logger import CustomLogger
 from utils.pytorch_datasets import Ben19Dataset
 from utils.pytorch_utils import (
     get_classification_report,
@@ -58,7 +58,12 @@ class FLCLient:
         num_classes: int = 19,
         device: torch.device = torch.device('cpu'),
         dataset_filter: str = "serbia",
+        logger: CustomLogger = None,
+        name: str = "FLClient",
+        run_name: str = ""
     ) -> None:
+        self.name = name
+        self.logger = logger if logger is not None else CustomLogger(self.name, log_dir=f"./logs/{run_name}")
         self.model = model
         self.previous_model = model
         self.global_model = model
@@ -100,7 +105,7 @@ class FLCLient:
             self.model.to(self.device)
             self.global_model.to(self.device)
         else:
-            print(f"Putting model onto {training_device}")
+            self.logger.info(f"Putting model {self.name} onto {training_device}")
             self.model.to(training_device)
             self.global_model.to(training_device)
 
@@ -110,15 +115,16 @@ class FLCLient:
         self.criterion = self.criterion_constructor(**self.criterion_kwargs)
 
         for epoch in range(1, epochs + 1):
-            print("Epoch {}/{}".format(epoch, epochs))
-            print("-" * 10)
+            self.logger.info("Epoch {}/{}".format(epoch, epochs))
 
             self.train_epoch(training_device)
-        
+        self.logger.info("Training done!")
         if validate:
+            self.logger.info("validation started")
             report = self.validation_round(training_device)
             self.results = update_results(self.results, report, self.num_classes)
-
+            self.logger.info("Validation done!")
+        
         state_after = self.model.state_dict()
         self.previous_model = copy.deepcopy(self.model) #save previous model for next iteration
 
@@ -141,14 +147,12 @@ class FLCLient:
     
     def train_epoch(self, training_device = None):
         self.model.train()
-        if training_device is None:
-            print("ERROR TRAINING DEVICE SHOULD NOT BE NONE")
-        for idx, batch in enumerate(tqdm(self.train_loader, desc=f"training {self} on device {training_device if training_device is not None else self.device}")):
+        for idx, batch in enumerate(tqdm(self.train_loader, desc=f"training {self.name} on device {training_device if training_device is not None else self.device}")):
+            self.logger.info(f"Batch {idx + 1}/{len(self.train_loader)}")
             data, labels, index = batch["data"], batch["label"], batch["index"]
             if training_device is None:
                 data = data.to(self.device)
             else:
-                print(f"Training model on {training_device}")
                 data = data.to(training_device)
             label_new=np.copy(labels)
             label_new=self.change_sizes(label_new)
@@ -244,19 +248,24 @@ class GlobalClient:
         num_classes: int = 19,
         dataset_filter: str = "serbia",
         state_dict_path: str = None,
-        results_path: str = None
+        results_path: str = None,
+        logger: CustomLogger = None,
+        name: str = "GlobalClient",
+        run_name: str = ""
     ) -> None:
+        self.name = name
+        self.logger = logger if logger is not None else CustomLogger(self.name, f"./logs/{run_name}/")
         self.model = model
         self.device = torch.device(0) if torch.cuda.is_available() else torch.device('cpu')
-        print(f'Using device: {self.device}')
+        self.logger.info(f'Using device: {self.device}')
         self.model.to(self.device)
         self.num_classes = num_classes
         self.dataset_filter = dataset_filter
         self.aggregator = Aggregator()
         self.results = init_results(self.num_classes)
         self.clients = [
-            FLCLient(copy.deepcopy(self.model), lmdb_path, val_path, csv_path, num_classes=num_classes, dataset_filter=dataset_filter, device=self.device)
-            for csv_path in csv_paths
+            FLCLient(copy.deepcopy(self.model), lmdb_path, val_path, csv_path, num_classes=num_classes, dataset_filter=dataset_filter, device=self.device, name=f"FLClient_{i}", run_name=run_name)
+            for i, csv_path in enumerate(csv_paths)
         ]
         self.validation_set = Ben19Dataset(
             lmdb_path=lmdb_path, csv_path=val_path, img_transform="default"
@@ -269,7 +278,6 @@ class GlobalClient:
             pin_memory=True,
         )
         self.gpu_locks = [threading.Lock() for _ in range(torch.cuda.device_count())]
-        # self.gpu_locks = [threading.Lock() for _ in range(1)]
         
         dt = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         if state_dict_path is None:
@@ -295,8 +303,7 @@ class GlobalClient:
     def train(self, communication_rounds: int, epochs: int):
         start = time.perf_counter()
         for com_round in range(1, communication_rounds + 1):
-            print("Round {}/{}".format(com_round, communication_rounds))
-            print("-" * 10)
+            self.logger.info("Round {}/{}".format(com_round, communication_rounds))
 
             self.communication_round(epochs)
             report = self.validation_round()
@@ -356,18 +363,14 @@ class GlobalClient:
     
     def worker(self, client, gpu_id, model_updates, epochs):
         # with self.gpu_locks[gpu_id]:
-        print(f"Lock pre client (should be true): {self.gpu_locks[gpu_id].locked()}")
-        print(f"Client {client} training on device #{gpu_id}")
         model_update = self.train_client_on_device(client, epochs, gpu_id)
         self.gpu_locks[gpu_id].release()
-        print(f"Lock post client (should be false): {self.gpu_locks[gpu_id].locked()}")
         model_updates.append(model_update)
         
     
     def communication_round(self, epochs: int):
         # here the clients train
-        # model_updates = [client.train_one_round(epochs) for client in self.clients]
-        
+        self.logger.info("Starting communication round")
         model_updates = []
         threads = []
         for client in self.clients:
@@ -375,6 +378,7 @@ class GlobalClient:
             while not client_training:
                 for gpu_id in range(len(self.gpu_locks)):
                     if not self.gpu_locks[gpu_id].locked():
+                        self.logger.info(f"{client.name} training on device #{gpu_id}")
                         self.gpu_locks[gpu_id].acquire()
                         thread = threading.Thread(target=self.worker, args=(client, gpu_id, model_updates, epochs))
                         threads.append(thread)
@@ -382,22 +386,20 @@ class GlobalClient:
                         client_training = True
                         break
                 
-        
-        print("Done with training clients")
         for t in threads:
             t.join()
-        print("Threads have joined")
+        self.logger.info("All clients done with training")
                 
         # parameter aggregation
         update_aggregation = self.aggregator.fed_avg(model_updates)
-        print("Aggregation complete")
+        self.logger.info("Model update aggregation complete")
         # update the global model
         global_state_dict = self.model.state_dict()
         for key, value in global_state_dict.items():
             update = update_aggregation[key].to(self.device)
             global_state_dict[key] = value + update
         self.model.load_state_dict(global_state_dict)
-        print("Comm round done")
+        self.logger.info("Communication round done")
 
     def save_state_dict(self):
         if not Path(self.state_dict_path).parent.is_dir():

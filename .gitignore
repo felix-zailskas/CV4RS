@@ -58,3 +58,4 @@ bin/
 **/checkpoints/*
 **/results/*
 **/img/*
+**/logs/*
