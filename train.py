@@ -19,6 +19,12 @@ dname = os.path.dirname(abspath)
 os.chdir(dname)
 
 
+LOCAL_EPOCHS = 1  # amount of epochs each client trains for locally
+GLOBAL_COMMUNICATION_ROUNDS = 1  # amount of communication rounds the global model 
+NUM_CHANNELS = 10
+NUM_CLASSES = 19
+
+
 def train(args):
     # processing input args
     input_args = []
@@ -37,16 +43,16 @@ def train(args):
     input_args.append(distr_type)
     # used model type
     if args.model == "mlpmixer":
-        model = create_mlp_mixer(channels, num_classes)
+        model = create_mlp_mixer(NUM_CHANNELS, NUM_CLASSES)
     elif args.model == "convmixer":
         model = create_convmixer(
-            channels=channels, num_classes=num_classes, pretrained=False
+            channels=NUM_CHANNELS, num_classes=NUM_CLASSES, pretrained=False
         )
     elif args.model == "poolformer":
-        model = create_poolformer_s12(in_chans=channels, num_classes=num_classes)
+        model = create_poolformer_s12(in_chans=NUM_CHANNELS, num_classes=NUM_CLASSES)
     elif args.model == "resnet":
         model = ResNet50(
-            "ResNet50", channels=channels, num_cls=num_classes, pretrained=False
+            "ResNet50", channels=NUM_CHANNELS, num_cls=NUM_CLASSES, pretrained=False
         )
     else:
         raise ValueError("Passed model name is not defined")
@@ -61,14 +67,11 @@ def train(args):
 
     # setting training parameters
     csv_paths = [str(p) for p in Path(f"data/{distr_type}/").glob("*train*.csv")]
-    cuda_no = 1
-    batch_size = 128
-    num_workers = 0
-    epochs = 1
-    communication_rounds = 1
+    # cuda_no = 1
+    # batch_size = 128
+    # num_workers = 0
 
-    channels = 10
-    num_classes = 19
+    
 
     global_client = GlobalClient(
         model=model,
@@ -80,14 +83,14 @@ def train(args):
         run_name=run_name,
     )
     global_model, global_results = global_client.train(
-        communication_rounds=communication_rounds, epochs=epochs
+        communication_rounds=GLOBAL_COMMUNICATION_ROUNDS, epochs=LOCAL_EPOCHS
     )
     global_logger.info(global_results)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-DS", type=int, default=None, choices=[1, 2])
+    parser.add_argument("-DS", type=int, default=None, choices=[1, 2, 3])
     parser.add_argument(
         "--model",
         type=str,
