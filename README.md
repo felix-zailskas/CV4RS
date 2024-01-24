@@ -44,6 +44,12 @@ The current project version supports training multiple simulated local clients o
 VISIBLE_CUDA_DEVICES=0,1
 ```
 
+To deactivate the usage of GPUs use
+
+```
+VISIBLE_CUDA_DEVICES=""
+```
+
 ### Dataset Split Scenarios
 
 The current version supports three data set splits representing different amounts of non-IID data distribution. The needed `.csv` files can be found under `data/scenario*`.
