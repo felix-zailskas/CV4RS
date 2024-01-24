@@ -339,7 +339,10 @@ class GlobalClient:
         for com_round in range(1, communication_rounds + 1):
             self.logger.info("Round {}/{}".format(com_round, communication_rounds))
 
-            self.communication_round(epochs)
+            if torch.cuda.is_available():
+                self.gpu_communication_round(epochs)
+            else:
+                self.cpu_communication_round(epochs)
             report = self.validation_round()
 
             self.results = update_results(self.results, report, self.num_classes)
@@ -401,10 +404,29 @@ class GlobalClient:
         model_update = self.train_client_on_device(client, epochs, gpu_id)
         self.gpu_locks[gpu_id].release()
         model_updates.append(model_update)
-
-    def communication_round(self, epochs: int):
+        
+    def apply_model_updates(self, model_updates):
+        # parameter aggregation
+        update_aggregation = self.aggregator.fed_avg(model_updates)
+        self.logger.info("Model update aggregation complete")
+        # update the global model
+        global_state_dict = self.model.state_dict()
+        for key, value in global_state_dict.items():
+            update = update_aggregation[key].to(self.device)
+            global_state_dict[key] = value + update
+        self.model.load_state_dict(global_state_dict)
+        self.logger.info("Communication round done")
+        
+    def cpu_communication_round(self, epochs: int):
+        self.logger.info("Starting communication round on CPU")
         # here the clients train
-        self.logger.info("Starting communication round")
+        model_updates = [client.train_one_round(epochs) for client in self.clients]
+        self.logger.info("All clients done with training")
+        self.apply_model_updates(model_updates)
+        
+    def gpu_communication_round(self, epochs: int):
+        # here the clients train
+        self.logger.info("Starting communication round with GPU support")
         model_updates = []
         threads = []
         for client in self.clients:
@@ -426,17 +448,7 @@ class GlobalClient:
         for t in threads:
             t.join()
         self.logger.info("All clients done with training")
-
-        # parameter aggregation
-        update_aggregation = self.aggregator.fed_avg(model_updates)
-        self.logger.info("Model update aggregation complete")
-        # update the global model
-        global_state_dict = self.model.state_dict()
-        for key, value in global_state_dict.items():
-            update = update_aggregation[key].to(self.device)
-            global_state_dict[key] = value + update
-        self.model.load_state_dict(global_state_dict)
-        self.logger.info("Communication round done")
+        self.apply_model_updates(model_updates)
 
     def save_state_dict(self):
         if not Path(self.state_dict_path).parent.is_dir():
