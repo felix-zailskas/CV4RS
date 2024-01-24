@@ -29,8 +29,12 @@ These should be adjusted to the needed use case.
 An example command for execution would be
 
 ```
-VISIBLE_CUDA_DEVICES=0,1 python3 train.py -DS 1 --model resnet
+VISIBLE_CUDA_DEVICES=0,1 numactl -C 0-5 python3 train.py -DS 1 --model resnet
 ```
+
+### CPU Usage Limit
+
+To prevent the training script to take over too much of the CPU workload and essentially crash the system use the `numactl -C 0-5` command when executing the training script.
 
 ### GPU Parallelization
 
