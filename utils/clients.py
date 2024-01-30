@@ -1,45 +1,36 @@
+import itertools
 import copy
-import threading
 import time
 from datetime import datetime
 from pathlib import Path
+from logger.logger import CustomLogger
 
 import numpy as np
 import torch
-from timm.models.mlp_mixer import MlpMixer
+import multiprocessing as mp
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from logger.logger import CustomLogger
-
-# from timm.models.convmixer import ConvMixer
-from models.ConvMixer import ConvMixer
-from models.poolformer import PoolFormer
+from utils.gpu_parallelization import GPUWorker, parallel_gpu_work
 from utils.pytorch_datasets import Ben19Dataset
-from utils.pytorch_models import ResNet50
 from utils.pytorch_utils import (
     get_classification_report,
     init_results,
-    print_micro_macro,
-    start_cuda,
     update_results,
+    print_micro_macro
 )
 
 
-class Aggregator:
-    def __init__(self) -> None:
-        pass
+def fed_avg(model_updates: list[dict]):
+    assert len(model_updates) > 0, "Trying to aggregate empty update list"
 
-    def fed_avg(self, model_updates: list[dict]):
-        assert len(model_updates) > 0, "Trying to aggregate empty update list"
+    update_aggregation = {}
+    for key in model_updates[0].keys():
+        params = torch.stack([update[key] for update in model_updates], dim=0)
+        avg = torch.mean(params, dim=0)
+        update_aggregation[key] = avg
 
-        update_aggregation = {}
-        for key in model_updates[0].keys():
-            params = torch.stack([update[key] for update in model_updates], dim=0)
-            avg = torch.mean(params, dim=0)
-            update_aggregation[key] = avg
-
-        return update_aggregation
+    return update_aggregation
 
 
 class FLCLient:
@@ -58,15 +49,14 @@ class FLCLient:
         num_classes: int = 19,
         device: torch.device = torch.device("cpu"),
         dataset_filter: str = "serbia",
-        logger: CustomLogger = None,
         name: str = "FLClient",
+        logger: CustomLogger = None,
         run_name: str = "",
     ) -> None:
         self.name = name
         self.logger = (
-            logger
-            if logger is not None
-            else CustomLogger(self.name, log_dir=f"./logs/{run_name}")
+            logger if logger is not None
+            else CustomLogger(self.name, f"./logs/{run_name}")
         )
         self.model = model
         self.previous_model = model
@@ -128,6 +118,7 @@ class FLCLient:
             self.logger.info("Epoch {}/{}".format(epoch, epochs))
 
             self.train_epoch(training_device)
+            break
         self.logger.info("Training done!")
         if validate:
             self.logger.info("validation started")
@@ -165,7 +156,6 @@ class FLCLient:
                 desc=f"training {self.name} on device {training_device if training_device is not None else self.device}",
             )
         ):
-            self.logger.info(f"Batch {idx + 1}/{len(self.train_loader)}")
             data, labels, index = batch["data"], batch["label"], batch["index"]
             if training_device is None:
                 data = data.to(self.device)
@@ -267,40 +257,57 @@ class GlobalClient:
         dataset_filter: str = "serbia",
         state_dict_path: str = None,
         results_path: str = None,
-        logger: CustomLogger = None,
         name: str = "GlobalClient",
+        logger: CustomLogger = None,
         run_name: str = "",
     ) -> None:
         self.name = name
-        self.logger = (
-            logger
-            if logger is not None
-            else CustomLogger(self.name, f"./logs/{run_name}/")
-        )
         self.model = model
-        self.device = (
-            torch.device(0) if torch.cuda.is_available() else torch.device("cpu")
+        self.logger = (
+            logger if logger is not None
+            else CustomLogger(self.name, f"./logs/{run_name}")
         )
+        
+        # check for available GPUs
+        if not torch.cuda.is_available():
+            self.device = torch.device("cpu")
+        else:
+            # validation is done on the first device
+            self.device = torch.device(0)
+            # GPU parallelization is active for more than one GPU
+            self.gpu_parallelization = torch.cuda.device_count() > 1
+        
         self.logger.info(f"Using device: {self.device}")
         self.model.to(self.device)
         self.num_classes = num_classes
         self.dataset_filter = dataset_filter
-        self.aggregator = Aggregator()
         self.results = init_results(self.num_classes)
-        self.clients = [
-            FLCLient(
-                copy.deepcopy(self.model),
-                lmdb_path,
-                val_path,
-                csv_path,
-                num_classes=num_classes,
-                dataset_filter=dataset_filter,
-                device=self.device,
-                name=f"FLClient_{i}",
-                run_name=run_name,
-            )
-            for i, csv_path in enumerate(csv_paths)
-        ]
+        if self.gpu_parallelization:
+            self.train_loaders = [
+                DataLoader(
+                    Ben19Dataset(lmdb_path, csv_path),
+                    batch_size=batch_size,
+                    num_workers=num_workers,
+                    shuffle=True,
+                    pin_memory=True,
+                )
+                for csv_path in csv_paths
+            ]
+        else:
+            self.clients = [
+                FLCLient(
+                    copy.deepcopy(self.model),
+                    lmdb_path,
+                    val_path,
+                    csv_path,
+                    num_classes=num_classes,
+                    dataset_filter=dataset_filter,
+                    device=self.device,
+                    name=f"FLClient_{i}",
+                    run_name=run_name,
+                )
+                for i, csv_path in enumerate(csv_paths)
+            ]
         self.validation_set = Ben19Dataset(
             lmdb_path=lmdb_path, csv_path=val_path, img_transform="default"
         )
@@ -311,38 +318,24 @@ class GlobalClient:
             shuffle=False,
             pin_memory=True,
         )
-        self.gpu_locks = [threading.Lock() for _ in range(torch.cuda.device_count())]
 
-        dt = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        if run_name == "":
+            run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         if state_dict_path is None:
-            if isinstance(model, ConvMixer):
-                self.state_dict_path = f"checkpoints/global_convmixer_{dt}.pkl"
-            elif isinstance(model, MlpMixer):
-                self.state_dict_path = f"checkpoints/global_mlpmixer_{dt}.pkl"
-            elif isinstance(model, PoolFormer):
-                self.state_dict_path = f"checkpoints/global_poolformer_{dt}.pkl"
-            elif isinstance(model, ResNet50):
-                self.state_dict_path = f"checkpoints/global_resnet18_{dt}.pkl"
+            self.state_dict_path = f"checkpoints/{run_name}.pkl"
 
         if results_path is None:
-            if isinstance(model, ConvMixer):
-                self.results_path = f"results/convmixer_results_{dt}.pkl"
-            elif isinstance(model, MlpMixer):
-                self.results_path = f"results/mlpmixer_results_{dt}.pkl"
-            elif isinstance(model, PoolFormer):
-                self.results_path = f"results/poolformer_results_{dt}.pkl"
-            elif isinstance(model, ResNet50):
-                self.results_path = f"results/resnet18_results_{dt}.pkl"
+            self.results_path = f"results/{run_name}.pkl"
 
     def train(self, communication_rounds: int, epochs: int):
         start = time.perf_counter()
         for com_round in range(1, communication_rounds + 1):
             self.logger.info("Round {}/{}".format(com_round, communication_rounds))
 
-            if torch.cuda.is_available():
-                self.gpu_communication_round(epochs)
+            if self.gpu_parallelization:
+                self.parallel_communication_round(epochs)
             else:
-                self.cpu_communication_round(epochs)
+                self.sequential_communication_round(epochs)
             report = self.validation_round()
 
             self.results = update_results(self.results, report, self.num_classes)
@@ -372,7 +365,7 @@ class GlobalClient:
         predicted_probs = []
 
         with torch.no_grad():
-            for batch_idx, batch in enumerate(tqdm(self.val_loader, desc="test")):
+            for batch_idx, batch in enumerate(tqdm(self.val_loader, desc="Validation round global model")):
                 data = batch["data"].to(self.device)
                 labels = batch["label"]
                 label_new = np.copy(labels)
@@ -384,6 +377,7 @@ class GlobalClient:
                 predicted_probs += list(probs)
 
                 y_true += list(label_new)
+                
 
         predicted_probs = np.asarray(predicted_probs)
         y_predicted = (predicted_probs >= 0.5).astype(np.float32)
@@ -393,21 +387,11 @@ class GlobalClient:
             y_true, y_predicted, predicted_probs, self.dataset_filter
         )
         return report
-
-    def train_client_on_device(self, client, epochs, gpu_id):
-        with torch.cuda.device(gpu_id):
-            model_update = client.train_one_round(epochs, torch.device(gpu_id))
-        return model_update
-
-    def worker(self, client, gpu_id, model_updates, epochs):
-        # with self.gpu_locks[gpu_id]:
-        model_update = self.train_client_on_device(client, epochs, gpu_id)
-        self.gpu_locks[gpu_id].release()
-        model_updates.append(model_update)
         
     def apply_model_updates(self, model_updates):
         # parameter aggregation
-        update_aggregation = self.aggregator.fed_avg(model_updates)
+        self.logger.info("inside model update")
+        update_aggregation = fed_avg(model_updates)
         self.logger.info("Model update aggregation complete")
         # update the global model
         global_state_dict = self.model.state_dict()
@@ -417,37 +401,38 @@ class GlobalClient:
         self.model.load_state_dict(global_state_dict)
         self.logger.info("Communication round done")
         
-    def cpu_communication_round(self, epochs: int):
-        self.logger.info("Starting communication round on CPU")
+    def sequential_communication_round(self, epochs: int):
+        if self.device is torch.device("CPU"):
+            self.logger.info("Starting communication round on CPU")
+        else:
+            self.logger.info("Starting communication round on single GPU")
         # here the clients train
         model_updates = [client.train_one_round(epochs) for client in self.clients]
         self.logger.info("All clients done with training")
         self.apply_model_updates(model_updates)
         
-    def gpu_communication_round(self, epochs: int):
+    def parallel_communication_round(self, epochs: int):
         # here the clients train
-        self.logger.info("Starting communication round with GPU support")
-        model_updates = []
-        threads = []
-        for client in self.clients:
-            client_training = False
-            while not client_training:
-                for gpu_id in range(len(self.gpu_locks)):
-                    if not self.gpu_locks[gpu_id].locked():
-                        self.logger.info(f"{client.name} training on device #{gpu_id}")
-                        self.gpu_locks[gpu_id].acquire()
-                        thread = threading.Thread(
-                            target=self.worker,
-                            args=(client, gpu_id, model_updates, epochs),
-                        )
-                        threads.append(thread)
-                        thread.start()
-                        client_training = True
-                        break
-
-        for t in threads:
-            t.join()
+        self.logger.info("Starting communication round on multiple GPUs")
+        # use mp.Manager to ensure that Locks and Queue are properly shared between processes
+        with mp.Manager() as manager:
+            model_queue = manager.Queue(len(self.train_loaders) + torch.cuda.device_count())
+            gpu_locks = [manager.Lock() for _ in range(torch.cuda.device_count())]
+            # process large loaders first to minimize idle time
+            queue_data = [(epochs, train_loader) for train_loader in self.train_loaders]
+            sorted_queue_data = sorted(queue_data, key=lambda x: len(x[1]), reverse=True)
+            # put training data in queue
+            for data in sorted_queue_data:
+                model_queue.put(data)
+            # put termination signal in queue
+            for _ in range(torch.cuda.device_count()):
+                model_queue.put(None)
+            processing_pool = mp.Pool(torch.cuda.device_count())
+            model_updates = processing_pool.map(parallel_gpu_work, [GPUWorker(gpu_id, model_queue, gpu_locks, self.model) for gpu_id in range(torch.cuda.device_count())])
+            processing_pool.close()
         self.logger.info("All clients done with training")
+        # flatten results list
+        model_updates = list(itertools.chain.from_iterable(model_updates))
         self.apply_model_updates(model_updates)
 
     def save_state_dict(self):

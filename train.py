@@ -3,16 +3,14 @@ import datetime
 import os
 from pathlib import Path
 
-import pandas as pd
-from sklearn.model_selection import train_test_split
+import multiprocessing as mp
 
-from logger.logger import CustomLogger
 from models.ConvMixer import create_convmixer
 from models.MLPMixer import create_mlp_mixer
 from models.poolformer import create_poolformer_s12
 from utils.clients import GlobalClient
 from utils.pytorch_models import ResNet50
-from utils.pytorch_utils import start_cuda
+from logger.logger import CustomLogger
 
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
@@ -41,6 +39,12 @@ def train(args):
     else:
         raise ValueError("Please specify Dataset")
     input_args.append(distr_type)
+    # averaging algorithm
+    if args.algo == "fedavg":
+        avg_algorithm = "fedavg"
+    else:
+        raise ValueError("Please specify averaging algorithm")
+    input_args.append(avg_algorithm)
     # used model type
     if args.model == "mlpmixer":
         model = create_mlp_mixer(NUM_CHANNELS, NUM_CLASSES)
@@ -58,20 +62,15 @@ def train(args):
         raise ValueError("Passed model name is not defined")
     input_args.append(args.model)
     
-    selected_args_str = "_".join(input_args)
-    current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = selected_args_str + "_" + current_time
+    selected_args_str = "/".join(input_args)
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_name = selected_args_str + f"/epochs({LOCAL_EPOCHS})_comrounds({GLOBAL_COMMUNICATION_ROUNDS})_{current_time}"
     global_logger = CustomLogger("GlobalLogger", f"./logs/{run_name}")
     global_logger.info(f"Using model: {type(model)}")
     global_logger.info(f"Using Dataset: {distr_type}")
 
     # setting training parameters
-    csv_paths = [str(p) for p in Path(f"data/{distr_type}/").glob("*train*.csv")]
-    # cuda_no = 1
-    # batch_size = 128
-    # num_workers = 0
-
-    
+    csv_paths = [str(p) for p in Path(f"data/{distr_type}/").glob("*train*.csv")][:1]
 
     global_client = GlobalClient(
         model=model,
@@ -89,8 +88,10 @@ def train(args):
 
 
 if __name__ == "__main__":
+    mp.set_start_method("spawn")
     parser = argparse.ArgumentParser()
     parser.add_argument("-DS", type=int, default=None, choices=[1, 2, 3])
+    parser.add_argument("--algo", type=str, default="fedavg", choices=["fedavg"])
     parser.add_argument(
         "--model",
         type=str,

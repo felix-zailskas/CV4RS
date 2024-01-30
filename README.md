@@ -29,7 +29,7 @@ These should be adjusted to the needed use case.
 An example command for execution would be
 
 ```
-VISIBLE_CUDA_DEVICES=0,1 numactl -C 0-5 python3 train.py -DS 1 --model resnet
+VISIBLE_CUDA_DEVICES=0 numactl -C 0-5 python3 train.py -DS 1 --model resnet --algo fedavg
 ```
 
 ### CPU Usage Limit
@@ -38,13 +38,23 @@ To prevent the training script to take over too much of the CPU workload and ess
 
 ### GPU Parallelization
 
-The current project version supports training multiple simulated local clients on different GPUs at the same time. The training script will use all available `cuda` devices it can find. To limit the used GPUs use the following command when executing the training script
+The current project version supports training multiple simulated local clients on different GPUs at the same time. The training script will use all available `cuda` devices it can find. To set the GPUs to use during training use the `VISIBLE_CUDA_DEVICES` environment variable. Parallelization is done by creating a queue of local clients that need to be trained. Then a `gpu_parallelization.GPUWorker` object is initialized for each available GPU which contains this queue. Using `multiprocessing.Lock` objects it is ensured that only one model is trained on each GPU at the same time. The results of this training are returned to the global model and then aggregated normaly.
+
+Note that in our tests the usage of multiple GPUs for the same training run did not result in a significant decrease in training time. There seems to be some sort of overhead to schedule the different training processes and accessing the same training data in our server. Hence the multiprocessing logic is only actiavted when multiple GPUs are made available to the training script. If you do not want to use it make sure to only make one GPU visible to the training script. Furthermore, note that all GPU workers log only to stdout.
+
+To activate training with a single GPU training make that GPU visible (Recommended):
+
+```
+VISIBLE_CUDA_DEVICES=0
+```
+
+To activate multiple GPU training make multiple GPUs visible:
 
 ```
 VISIBLE_CUDA_DEVICES=0,1
 ```
 
-To deactivate the usage of GPUs use
+To deactivate the usage of GPUs make none visible:
 
 ```
 VISIBLE_CUDA_DEVICES=""
@@ -64,6 +74,10 @@ This input can be controlled by the execution flag `-DS` it expects an input of 
 
 The current version supports four model types as described above. Which one should be used can be controlled by the execution flag `--model` it expects an input of [resnet, mlpmixer, convmixer, poolformer].
 
+### Averaging Algorithm
+
+The current version supports the FedAvg and FedDC averaging algorithms. Which one should be used can be controlled by the execution flag `--algo` it expects an input of [fedavg, feddc]. The default is FedAvg. Note that the parallelized GPU logic only supports FedAvg.
+
 ## Logs
 
-Every training run produces log files in which the user can track the training progress. These will be saved under `logs/{scenario}_{model_type}_{current_date}/`. There will be one global log file which tracks the progress of the global model as well as some meta information about the clients training, and one additional log file for each local client which tracks more detailed information about the local training progress.
+Every training run produces log files in which the user can track the training progress. These will be saved under `logs/{scenario}/{model_type}/{averaging_algorithm}/epochs({LOCAL_EPOCHS})_comrounds({GLOBAL_COMMUNICATION_ROUNDS})_{current_time}`. There will be one global log file which tracks the progress of the global model as well as some meta information about the clients training, and one additional log file for each local client which tracks more detailed information about the local training progress. In the case of actiavted GPU parallelization the log files for the local clients will be replaced by a logs of the GPUWorkers to stdout only.

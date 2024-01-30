@@ -5,7 +5,6 @@ import logging
 import os
 import sys
 
-
 class StdOutFormatter(logging.Formatter):
     grey = "\x1b[38;20m"
     yellow = "\x1b[33;20m"
@@ -27,7 +26,8 @@ class StdOutFormatter(logging.Formatter):
         logging.Formatter.__init__(self, self.fmt)
 
     def format(self, record):
-        log_fmt = self.FORMATS.get(record.levelno)
+        # log_fmt = self.FORMATS.get(record.levelno)
+        log_fmt = self.fmt
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
 
@@ -48,7 +48,6 @@ class CustomLogger(logging.getLoggerClass()):
         # Create custom logger logging all five levels
         super().__init__(name)
         self.setLevel(logging.DEBUG)
-        print(f"intit with {name} {log_dir}")
 
         # Create stream handler for logging to stdout (log all five levels)
         self.stdout_handler = logging.StreamHandler(sys.stdout)
@@ -66,8 +65,9 @@ class CustomLogger(logging.getLoggerClass()):
         store the log file under `log_dir`)."""
 
         # Determine log path/file name; create log_dir if necessary
-        now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_name = f'{str(name).replace(" ", "_")}_{now}'
+        # now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        # log_name = f'{str(name).replace(" ", "_")}_{now}'
+        log_name = name
         if not os.path.exists(log_dir):
             try:
                 os.makedirs(log_dir)
