@@ -1,23 +1,23 @@
-import itertools
 import copy
+import itertools
+import multiprocessing as mp
 import time
 from datetime import datetime
 from pathlib import Path
-from logger.logger import CustomLogger
 
 import numpy as np
 import torch
-import multiprocessing as mp
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from logger.logger import CustomLogger
 from utils.gpu_parallelization import GPUWorker, parallel_gpu_work
 from utils.pytorch_datasets import Ben19Dataset
 from utils.pytorch_utils import (
     get_classification_report,
     init_results,
+    print_micro_macro,
     update_results,
-    print_micro_macro
 )
 
 
@@ -55,7 +55,8 @@ class FLCLient:
     ) -> None:
         self.name = name
         self.logger = (
-            logger if logger is not None
+            logger
+            if logger is not None
             else CustomLogger(self.name, f"./logs/{run_name}")
         )
         self.model = model
@@ -264,10 +265,11 @@ class GlobalClient:
         self.name = name
         self.model = model
         self.logger = (
-            logger if logger is not None
+            logger
+            if logger is not None
             else CustomLogger(self.name, f"./logs/{run_name}")
         )
-        
+
         # check for available GPUs
         if not torch.cuda.is_available():
             self.device = torch.device("cpu")
@@ -276,7 +278,7 @@ class GlobalClient:
             self.device = torch.device(0)
             # GPU parallelization is active for more than one GPU
             self.gpu_parallelization = torch.cuda.device_count() > 1
-        
+
         self.logger.info(f"Using device: {self.device}")
         self.model.to(self.device)
         self.num_classes = num_classes
@@ -365,7 +367,9 @@ class GlobalClient:
         predicted_probs = []
 
         with torch.no_grad():
-            for batch_idx, batch in enumerate(tqdm(self.val_loader, desc="Validation round global model")):
+            for batch_idx, batch in enumerate(
+                tqdm(self.val_loader, desc="Validation round global model")
+            ):
                 data = batch["data"].to(self.device)
                 labels = batch["label"]
                 label_new = np.copy(labels)
@@ -377,7 +381,6 @@ class GlobalClient:
                 predicted_probs += list(probs)
 
                 y_true += list(label_new)
-                
 
         predicted_probs = np.asarray(predicted_probs)
         y_predicted = (predicted_probs >= 0.5).astype(np.float32)
@@ -387,7 +390,7 @@ class GlobalClient:
             y_true, y_predicted, predicted_probs, self.dataset_filter
         )
         return report
-        
+
     def apply_model_updates(self, model_updates):
         # parameter aggregation
         self.logger.info("inside model update")
@@ -400,7 +403,7 @@ class GlobalClient:
             global_state_dict[key] = value + update
         self.model.load_state_dict(global_state_dict)
         self.logger.info("Communication round done")
-        
+
     def sequential_communication_round(self, epochs: int):
         if self.device is torch.device("CPU"):
             self.logger.info("Starting communication round on CPU")
@@ -410,17 +413,21 @@ class GlobalClient:
         model_updates = [client.train_one_round(epochs) for client in self.clients]
         self.logger.info("All clients done with training")
         self.apply_model_updates(model_updates)
-        
+
     def parallel_communication_round(self, epochs: int):
         # here the clients train
-        self.logger.info("Starting communication round on multiple GPUs")
+        self.logger.info(f"Starting communication round on ({torch.cuda.device_count()}) GPUs")
         # use mp.Manager to ensure that Locks and Queue are properly shared between processes
         with mp.Manager() as manager:
-            model_queue = manager.Queue(len(self.train_loaders) + torch.cuda.device_count())
+            model_queue = manager.Queue(
+                len(self.train_loaders) + torch.cuda.device_count()
+            )
             gpu_locks = [manager.Lock() for _ in range(torch.cuda.device_count())]
             # process large loaders first to minimize idle time
             queue_data = [(epochs, train_loader) for train_loader in self.train_loaders]
-            sorted_queue_data = sorted(queue_data, key=lambda x: len(x[1]), reverse=True)
+            sorted_queue_data = sorted(
+                queue_data, key=lambda x: len(x[1]), reverse=True
+            )
             # put training data in queue
             for data in sorted_queue_data:
                 model_queue.put(data)
@@ -428,7 +435,13 @@ class GlobalClient:
             for _ in range(torch.cuda.device_count()):
                 model_queue.put(None)
             processing_pool = mp.Pool(torch.cuda.device_count())
-            model_updates = processing_pool.map(parallel_gpu_work, [GPUWorker(gpu_id, model_queue, gpu_locks, self.model) for gpu_id in range(torch.cuda.device_count())])
+            model_updates = processing_pool.map(
+                parallel_gpu_work,
+                [
+                    GPUWorker(gpu_id, model_queue, gpu_locks, self.model)
+                    for gpu_id in range(torch.cuda.device_count())
+                ],
+            )
             processing_pool.close()
         self.logger.info("All clients done with training")
         # flatten results list

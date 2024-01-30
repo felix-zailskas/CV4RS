@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 
+
 class StdOutFormatter(logging.Formatter):
     grey = "\x1b[38;20m"
     yellow = "\x1b[33;20m"

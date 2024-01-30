@@ -1,16 +1,15 @@
 import argparse
 import datetime
+import multiprocessing as mp
 import os
 from pathlib import Path
 
-import multiprocessing as mp
-
+from logger.logger import CustomLogger
 from models.ConvMixer import create_convmixer
 from models.MLPMixer import create_mlp_mixer
 from models.poolformer import create_poolformer_s12
 from utils.clients import GlobalClient
 from utils.pytorch_models import ResNet50
-from logger.logger import CustomLogger
 
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
@@ -18,7 +17,7 @@ os.chdir(dname)
 
 
 LOCAL_EPOCHS = 1  # amount of epochs each client trains for locally
-GLOBAL_COMMUNICATION_ROUNDS = 1  # amount of communication rounds the global model 
+GLOBAL_COMMUNICATION_ROUNDS = 1  # amount of communication rounds the global model
 NUM_CHANNELS = 10
 NUM_CLASSES = 19
 
@@ -61,10 +60,13 @@ def train(args):
     else:
         raise ValueError("Passed model name is not defined")
     input_args.append(args.model)
-    
+
     selected_args_str = "/".join(input_args)
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    run_name = selected_args_str + f"/epochs({LOCAL_EPOCHS})_comrounds({GLOBAL_COMMUNICATION_ROUNDS})_{current_time}"
+    run_name = (
+        selected_args_str
+        + f"/epochs({LOCAL_EPOCHS})_comrounds({GLOBAL_COMMUNICATION_ROUNDS})_{current_time}"
+    )
     global_logger = CustomLogger("GlobalLogger", f"./logs/{run_name}")
     global_logger.info(f"Using model: {type(model)}")
     global_logger.info(f"Using Dataset: {distr_type}")

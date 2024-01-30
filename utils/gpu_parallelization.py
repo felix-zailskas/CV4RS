@@ -1,8 +1,10 @@
 import copy
 import datetime
+
 import numpy as np
 import torch
 from tqdm import tqdm
+
 
 def parallel_gpu_work(gpu_worker):
     results = []
@@ -26,6 +28,7 @@ def parallel_gpu_work(gpu_worker):
             results.append(result)
     return results
 
+
 class GPUWorker:
     def __init__(self, gpu_id, model_queue, gpu_locks, model) -> None:
         self.gpu_id = gpu_id
@@ -33,10 +36,8 @@ class GPUWorker:
         self.gpu_lock = gpu_locks[gpu_id]
         # Create a new instance of the model on the GPU
         self.model = copy.deepcopy(model).cuda(self.gpu_id)
-    
-    def train_one_round(
-        self, epochs: int
-    ):
+
+    def train_one_round(self, epochs: int):
         state_before = copy.deepcopy(self.model.state_dict())
         self.global_model = copy.deepcopy(
             self.model
@@ -45,7 +46,9 @@ class GPUWorker:
         self.model.to(torch.device(self.gpu_id))
         self.global_model.to(torch.device(self.gpu_id))
 
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001, weight_decay=0)
+        self.optimizer = torch.optim.Adam(
+            self.model.parameters(), lr=0.001, weight_decay=0
+        )
         self.criterion = torch.nn.BCEWithLogitsLoss(reduction="mean")
 
         for epoch in range(1, epochs + 1):
