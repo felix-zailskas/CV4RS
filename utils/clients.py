@@ -320,6 +320,7 @@ class GlobalClient:
             shuffle=False,
             pin_memory=True,
         )
+        self.train_time = None
 
         if run_name == "":
             run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -330,14 +331,20 @@ class GlobalClient:
             self.results_path = f"results/{run_name}.pkl"
 
     def train(self, communication_rounds: int, epochs: int):
-        start = time.perf_counter()
+        self.comm_times = []
+        train_start = time.perf_counter()
         for com_round in range(1, communication_rounds + 1):
             self.logger.info("Round {}/{}".format(com_round, communication_rounds))
 
+            # communication round
+            comm_start = time.perf_counter()
             if self.gpu_parallelization:
                 self.parallel_communication_round(epochs)
             else:
                 self.sequential_communication_round(epochs)
+            comm_time = time.perf_counter() - comm_start
+            self.logger.info(f"Time communication round: {comm_time}")
+            self.comm_times.append(comm_time)
             report = self.validation_round()
 
             self.results = update_results(self.results, report, self.num_classes)
@@ -345,7 +352,15 @@ class GlobalClient:
 
             for client in self.clients:
                 client.set_model(self.model)
-        self.train_time = time.perf_counter() - start
+
+            if com_round % 5 == 0:
+                self.save_state_dict()
+                # self.client_results = [
+                #     client.get_validation_results() for client in self.clients
+                # ]
+                # self.save_results()
+
+        self.train_time = time.perf_counter() - train_start
 
         self.client_results = [
             client.get_validation_results() for client in self.clients
@@ -416,7 +431,9 @@ class GlobalClient:
 
     def parallel_communication_round(self, epochs: int):
         # here the clients train
-        self.logger.info(f"Starting communication round on ({torch.cuda.device_count()}) GPUs")
+        self.logger.info(
+            f"Starting communication round on ({torch.cuda.device_count()}) GPUs"
+        )
         # use mp.Manager to ensure that Locks and Queue are properly shared between processes
         with mp.Manager() as manager:
             model_queue = manager.Queue(
@@ -460,5 +477,6 @@ class GlobalClient:
             "global": self.results,
             "clients": self.client_results,
             "train_time": self.train_time,
+            "communication_times": self.comm_times,
         }
         torch.save(res, self.results_path)

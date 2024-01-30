@@ -47,19 +47,23 @@ def train(args):
     # used model type
     if args.model == "mlpmixer":
         model = create_mlp_mixer(NUM_CHANNELS, NUM_CLASSES)
+        model_name = args.model
     elif args.model == "convmixer":
         model = create_convmixer(
             channels=NUM_CHANNELS, num_classes=NUM_CLASSES, pretrained=False
         )
+        model_name = args.model
     elif args.model == "poolformer":
         model = create_poolformer_s12(in_chans=NUM_CHANNELS, num_classes=NUM_CLASSES)
+        model_name = args.model
     elif args.model == "resnet":
         model = ResNet50(
             "ResNet50", channels=NUM_CHANNELS, num_cls=NUM_CLASSES, pretrained=False
         )
+        model_name = "resnet50"
     else:
         raise ValueError("Passed model name is not defined")
-    input_args.append(args.model)
+    input_args.append(model_name)
 
     selected_args_str = "/".join(input_args)
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
