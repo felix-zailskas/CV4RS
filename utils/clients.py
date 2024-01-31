@@ -425,7 +425,10 @@ class GlobalClient:
         else:
             self.logger.info("Starting communication round on single GPU")
         # here the clients train
-        model_updates = [client.train_one_round(epochs) for client in self.clients]
+        model_updates = []
+        for client in self.clients:
+            self.logger.info(f"{client.name} training...")
+            model_updates.append(client.train_one_round(epochs))
         self.logger.info("All clients done with training")
         self.apply_model_updates(model_updates)
 

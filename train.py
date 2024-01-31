@@ -71,6 +71,8 @@ def train(args):
         selected_args_str
         + f"/epochs({LOCAL_EPOCHS})_comrounds({GLOBAL_COMMUNICATION_ROUNDS})_{current_time}"
     )
+    if args.name is not None:
+        run_name += f"_{args.name}"
     global_logger = CustomLogger("GlobalLogger", f"./logs/{run_name}")
     global_logger.info(f"Using model: {type(model)}")
     global_logger.info(f"Using Dataset: {distr_type}")
@@ -103,6 +105,11 @@ if __name__ == "__main__":
         type=str,
         default=None,
         choices=["mlpmixer", "convmixer", "poolformer", "resnet"],
+    )
+    parser.add_argument(
+        "--name",
+        type=str,
+        default=None,
     )
     args = parser.parse_args()
 
