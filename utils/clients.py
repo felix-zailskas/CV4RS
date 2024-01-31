@@ -101,6 +101,7 @@ class FLCLient:
             self.model
         )  # save current model as global model
         if training_device is None:
+            self.logger.info(f"Putting model {self.name} onto {self.device}")
             self.model.to(self.device)
             self.global_model.to(self.device)
         else:

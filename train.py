@@ -16,8 +16,8 @@ dname = os.path.dirname(abspath)
 os.chdir(dname)
 
 
-LOCAL_EPOCHS = 1  # amount of epochs each client trains for locally
-GLOBAL_COMMUNICATION_ROUNDS = 1  # amount of communication rounds the global model
+LOCAL_EPOCHS = 3  # amount of epochs each client trains for locally
+GLOBAL_COMMUNICATION_ROUNDS = 20  # amount of communication rounds the global model
 NUM_CHANNELS = 10
 NUM_CLASSES = 19
 
@@ -54,7 +54,7 @@ def train(args):
         )
         model_name = args.model
     elif args.model == "poolformer":
-        model = create_poolformer_s12(in_chans=NUM_CHANNELS, num_classes=NUM_CLASSES)
+        model = create_poolformer_s12(layers=[2, 3, 5, 3], in_chans=NUM_CHANNELS, num_classes=NUM_CLASSES)
         model_name = args.model
     elif args.model == "resnet":
         model = ResNet50(
@@ -78,7 +78,7 @@ def train(args):
     global_logger.info(f"Using Dataset: {distr_type}")
 
     # setting training parameters
-    csv_paths = [str(p) for p in Path(f"data/{distr_type}/").glob("*train*.csv")][:1]
+    csv_paths = [str(p) for p in Path(f"data/{distr_type}/").glob("*train*.csv")]
 
     global_client = GlobalClient(
         model=model,
