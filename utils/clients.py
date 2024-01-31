@@ -119,7 +119,7 @@ class FLCLient:
             self.logger.info("Epoch {}/{}".format(epoch, epochs))
 
             self.train_epoch(training_device)
-            break
+
         self.logger.info("Training done!")
         if validate:
             self.logger.info("validation started")
@@ -420,7 +420,7 @@ class GlobalClient:
         self.logger.info("Communication round done")
 
     def sequential_communication_round(self, epochs: int):
-        if self.device is torch.device("CPU"):
+        if self.device is torch.device("cpu"):
             self.logger.info("Starting communication round on CPU")
         else:
             self.logger.info("Starting communication round on single GPU")
