@@ -29,7 +29,7 @@ These should be adjusted to the needed use case.
 An example command for execution would be
 
 ```
-VISIBLE_CUDA_DEVICES=0 numactl -C 0-5 python3 train.py -DS 1 --model resnet --algo fedavg
+CUDA_VISIBLE_DEVICES=0 numactl -C 0-5 python3 train.py -DS 1 --model resnet --algo fedavg
 ```
 
 ### CPU Usage Limit
@@ -38,26 +38,26 @@ To prevent the training script to take over too much of the CPU workload and ess
 
 ### GPU Parallelization
 
-The current project version supports training multiple simulated local clients on different GPUs at the same time. The training script will use all available `cuda` devices it can find. To set the GPUs to use during training use the `VISIBLE_CUDA_DEVICES` environment variable. Parallelization is done by creating a queue of local clients that need to be trained. Then a `gpu_parallelization.GPUWorker` object is initialized for each available GPU which contains this queue. Using `multiprocessing.Lock` objects it is ensured that only one model is trained on each GPU at the same time. The results of this training are returned to the global model and then aggregated normaly.
+The current project version supports training multiple simulated local clients on different GPUs at the same time. The training script will use all available `cuda` devices it can find. To set the GPUs to use during training use the `CUDA_VISIBLE_DEVICES` environment variable. Parallelization is done by creating a queue of local clients that need to be trained. Then a `gpu_parallelization.GPUWorker` object is initialized for each available GPU which contains this queue. Using `multiprocessing.Lock` objects it is ensured that only one model is trained on each GPU at the same time. The results of this training are returned to the global model and then aggregated normaly.
 
 Note that in our tests the usage of multiple GPUs for the same training run did not result in a significant decrease in training time. There seems to be some sort of overhead to schedule the different training processes and accessing the same training data in our server. Hence the multiprocessing logic is only actiavted when multiple GPUs are made available to the training script. If you do not want to use it make sure to only make one GPU visible to the training script. Furthermore, note that all GPU workers log only to stdout.
 
 To activate training with a single GPU training make that GPU visible (Recommended):
 
 ```
-VISIBLE_CUDA_DEVICES=0
+CUDA_VISIBLE_DEVICES=0
 ```
 
 To activate multiple GPU training make multiple GPUs visible:
 
 ```
-VISIBLE_CUDA_DEVICES=0,1
+CUDA_VISIBLE_DEVICES=0,1
 ```
 
 To deactivate the usage of GPUs make none visible:
 
 ```
-VISIBLE_CUDA_DEVICES=""
+CUDA_VISIBLE_DEVICES=""
 ```
 
 ### Dataset Split Scenarios
