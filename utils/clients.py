@@ -193,7 +193,7 @@ class FLCLient:
 
             loss = loss_fi + loss_cp + loss_cg
             # loss = self.criterion(logits, label_new)
-            loss.backward()
+            loss.backward(retain_graph=True)
             self.optimizer.step()
             
     def validation_round(self):
@@ -256,6 +256,7 @@ class GlobalClient:
 
         self.global_state_gradient_diff = torch.zeros(self.n_par, dtype=torch.float32, device=self.device)
         self.delta_g_sum = torch.zeros(self.n_par, device=self.device) 
+        # self.global_model_param = get_mdl_params(self.model, self.device, self.n_par)
         self.clients = [
             FLCLient(copy.deepcopy(self.model), self, lmdb_path, val_path, csv_path, num_classes=num_classes, dataset_filter=dataset_filter, device=self.device)
             for csv_path in csv_paths
@@ -312,7 +313,7 @@ class GlobalClient:
             comm_time = time.perf_counter() - comm_start
             print(f"Time communication round: {comm_time}")
             self.comm_times.append(comm_time)
-            
+            print(torch.cuda.memory_summary())
             report = self.validation_round()
 
             self.results = update_results(self.results, report, self.num_classes)
@@ -375,17 +376,17 @@ class GlobalClient:
         for client in self.clients:
             client.train_one_round(epochs)
 
-        clnt_params_list = torch.stack([cl.curr_model_par for cl in self.clients])
-        clnt_param_drifts = torch.stack([cl.parameter_drift for cl in self.clients])
+        clnt_params_list = torch.stack([cl.curr_model_par.cpu() for cl in self.clients])
+        clnt_param_drifts = torch.stack([cl.parameter_drift.cpu() for cl in self.clients])
 
         avg_clnt_param = torch.mean(clnt_params_list, dim=0)
         delta_g_cur = 1 / self.n_clients * self.delta_g_sum  
         self.global_state_gradient_diff += delta_g_cur
 
-        global_model_param = avg_clnt_param + torch.mean(clnt_param_drifts, dim=0)
+        self.global_model_param = avg_clnt_param + torch.mean(clnt_param_drifts, dim=0)
 
-        self.model = set_client_from_params(self.model, global_model_param, self.device) 
-
+        self.model = set_client_from_params(self.model, self.global_model_param, self.device) 
+        
         # # parameter aggregation
         # update_aggregation = self.aggregator.fed_avg(model_updates)
 
