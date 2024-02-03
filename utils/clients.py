@@ -60,6 +60,7 @@ class FLCLient:
         dataset_filter: str = "serbia",
     ) -> None:
         self.model = model
+        self.batch_size = batch_size
         self.global_client = global_client
         self.optimizer_constructor = optimizer_constructor
         self.optimizer_kwargs = optimizer_kwargs
@@ -92,8 +93,8 @@ class FLCLient:
         )
         self.alpha_coef = 0.1
         self.n_par = self.global_client.n_par
-        self.state_gadient_diff = np.zeros((self.n_par)).astype('float32') 
-        self.parameter_drift =  np.zeros((self.n_par)).astype('float32') # h_i
+        self.state_gadient_diff = torch.zeros((self.n_par), dtype=torch.float32, device=self.device)
+        self.parameter_drift = torch.zeros((self.n_par), dtype=torch.float32, device=self.device) # h_i
 
     def set_model(self, model: torch.nn.Module):
         self.model = copy.deepcopy(model)
@@ -103,16 +104,18 @@ class FLCLient:
         self.dataset_weight = self.len_dataset / self.total_len_dataset * self.n_clients
 
     def train_one_round(self, epochs: int, validate: bool = False):
-        state_before = copy.deepcopy(self.model.named_parameters())
+        state_before = copy.deepcopy(self.model)
+        state_before.to(self.device)
+        state_before = state_before.named_parameters()
         
         # get global parameters ω as torch tensor
         global_parameter = None
-        for param in state_before:
-                if not isinstance(global_parameter, torch.Tensor):
-                # Initially nothing to concatenate
-                    global_parameter = param.reshape(-1)
-                else:
-                    global_parameter = torch.cat((global_parameter, param.reshape(-1)), 0)
+        for name, param in state_before:
+            if not isinstance(global_parameter, torch.Tensor):
+            # Initially nothing to concatenate
+                global_parameter = param.reshape(-1)
+            else:
+                global_parameter = torch.cat((global_parameter, param.reshape(-1)), 0)
 
         self.local_update_last = self.state_gadient_diff # Δθ_i
         self.alpha = self.alpha_coef / self.dataset_weight # α
@@ -136,7 +139,7 @@ class FLCLient:
 
         state_after = self.model.state_dict()
 
-        self.curr_model_par = get_mdl_params(self.model)
+        self.curr_model_par = get_mdl_params(self.model, self.device)
 
         delta_param_curr = self.curr_model_par - global_parameter
         self.parameter_drift += delta_param_curr
@@ -181,6 +184,7 @@ class FLCLient:
                     local_parameter = param.reshape(-1)
                 else:
                     local_parameter = torch.cat((local_parameter, param.reshape(-1)), 0)
+
             logits = self.model(data)
             loss_cp = self.alpha/2 * torch.sum((local_parameter - (global_parameter - self.parameter_drift))*(local_parameter - (global_parameter - self.parameter_drift)))
             loss_cg = torch.sum(local_parameter * self.state_update_diff) 
@@ -223,76 +227,77 @@ class FLCLient:
     def get_validation_results(self):
         return self.results
     
-    class GlobalClient:
-        def __init__(
-            self,
-            model: torch.nn.Module,
-            lmdb_path: str,
-            val_path: str,
-            csv_paths: list[str],
-            batch_size: int = 128,
-            num_workers: int = 0,
-            num_classes: int = 19,
-            dataset_filter: str = "serbia",
-            state_dict_path: str = None,
-            results_path: str = None
-        ) -> None:
-            self.model = model
-            self.device = torch.device(0) if torch.cuda.is_available() else torch.device('cpu')
-            print(f'Using device: {self.device}')
-            self.model.to(self.device)
-            self.num_classes = num_classes
-            self.dataset_filter = dataset_filter
-            self.aggregator = Aggregator()
-            self.results = init_results(self.num_classes)
-            self.n_clients = len(csv_paths)
-            self.clients = [
-                FLCLient(copy.deepcopy(self.model), self, lmdb_path, val_path, csv_path, num_classes=num_classes, dataset_filter=dataset_filter, device=self.device)
-                for csv_path in csv_paths
-            ]
-            self.total_len_dataset = sum([cl.len_dataset for cl in self.clients])
-            for cl in self.clients:
-                cl.set_total_len_dataset(self.total_len_dataset)
-            self.validation_set = Ben19Dataset(
-                lmdb_path=lmdb_path, csv_path=val_path, img_transform="default"
-            )
-            self.val_loader = DataLoader(
-                self.validation_set,
-                batch_size=batch_size,
-                num_workers=num_workers,
-                shuffle=False,
-                pin_memory=True,
-            )
-            self.train_time = None
-            
-            self.n_par = 0
-            for param in self.model.parameters():
-                self.n_par += len(param.data.reshape(-1))
+class GlobalClient:
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        lmdb_path: str,
+        val_path: str,
+        csv_paths: list[str],
+        batch_size: int = 128,
+        num_workers: int = 0,
+        num_classes: int = 19,
+        dataset_filter: str = "serbia",
+        state_dict_path: str = None,
+        results_path: str = None
+    ) -> None:
+        self.model = model
+        self.device = torch.device(0) if torch.cuda.is_available() else torch.device('cpu')
+        print(f'Using device: {self.device}')
+        self.model.to(self.device)
+        self.num_classes = num_classes
+        self.dataset_filter = dataset_filter
+        self.aggregator = Aggregator()
+        self.results = init_results(self.num_classes)
+        self.n_clients = len(csv_paths)
+        self.n_par = 0
+        for param in self.model.parameters():
+            self.n_par += len(param.data.reshape(-1))
 
-            self.global_state_gradient_diff = np.zeros(self.n_par).astype('float32')
-            self.delta_g_sum = np.zeros(self.n_par) 
+        self.global_state_gradient_diff = torch.zeros(self.n_par, dtype=torch.float32, device=self.device)
+        self.delta_g_sum = torch.zeros(self.n_par, device=self.device) 
+        self.clients = [
+            FLCLient(copy.deepcopy(self.model), self, lmdb_path, val_path, csv_path, num_classes=num_classes, dataset_filter=dataset_filter, device=self.device)
+            for csv_path in csv_paths
+        ]
+        self.total_len_dataset = sum([cl.len_dataset for cl in self.clients])
+        for cl in self.clients:
+            cl.set_total_len_dataset(self.total_len_dataset)
+        self.validation_set = Ben19Dataset(
+            lmdb_path=lmdb_path, csv_path=val_path, img_transform="default"
+        )
+        self.val_loader = DataLoader(
+            self.validation_set,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=False,
+            pin_memory=True,
+        )
+        self.train_time = None
+        
+        
 
-            
-            dt = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-            if state_dict_path is None:
-                if isinstance(model, ConvMixer):
-                    self.state_dict_path = f'checkpoints/global_convmixer_{dt}.pkl'
-                elif isinstance(model, MlpMixer):
-                    self.state_dict_path = f'checkpoints/global_mlpmixer_{dt}.pkl'
-                elif isinstance(model, PoolFormer):
-                    self.state_dict_path = f'checkpoints/global_poolformer_{dt}.pkl'
-                elif isinstance(model, ResNet50):
-                    self.state_dict_path = f'checkpoints/global_resnet50_{dt}.pkl'
+        
+        dt = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        if state_dict_path is None:
+            if isinstance(model, ConvMixer):
+                self.state_dict_path = f'checkpoints/global_convmixer_{dt}.pkl'
+            elif isinstance(model, MlpMixer):
+                self.state_dict_path = f'checkpoints/global_mlpmixer_{dt}.pkl'
+            elif isinstance(model, PoolFormer):
+                self.state_dict_path = f'checkpoints/global_poolformer_{dt}.pkl'
+            elif isinstance(model, ResNet50):
+                self.state_dict_path = f'checkpoints/global_resnet50_{dt}.pkl'
 
-            if results_path is None:
-                if isinstance(model, ConvMixer):
-                    self.results_path = f'results/convmixer_results_{dt}.pkl'
-                elif isinstance(model, MlpMixer):
-                    self.results_path = f'results/mlpmixer_results_{dt}.pkl'
-                elif isinstance(model, PoolFormer):
-                    self.results_path = f'results/poolformer_results_{dt}.pkl'
-                elif isinstance(model, ResNet50):
-                    self.results_path = f'results/resnet50_results_{dt}.pkl'
+        if results_path is None:
+            if isinstance(model, ConvMixer):
+                self.results_path = f'results/convmixer_results_{dt}.pkl'
+            elif isinstance(model, MlpMixer):
+                self.results_path = f'results/mlpmixer_results_{dt}.pkl'
+            elif isinstance(model, PoolFormer):
+                self.results_path = f'results/poolformer_results_{dt}.pkl'
+            elif isinstance(model, ResNet50):
+                self.results_path = f'results/resnet50_results_{dt}.pkl'
 
     def train(self, communication_rounds: int, epochs: int):
         self.comm_times = []
@@ -370,14 +375,14 @@ class FLCLient:
         for client in self.clients:
             client.train_one_round(epochs)
 
-        clnt_params_list = np.array([cl.curr_model_par for cl in self.clients])
-        clnt_param_drifts = np.array([cl.parameter_drift for cl in self.clients])
+        clnt_params_list = torch.stack([cl.curr_model_par for cl in self.clients])
+        clnt_param_drifts = torch.stack([cl.parameter_drift for cl in self.clients])
 
-        avg_clnt_param = np.mean(clnt_params_list, axis = 0)
+        avg_clnt_param = torch.mean(clnt_params_list, dim=0)
         delta_g_cur = 1 / self.n_clients * self.delta_g_sum  
         self.global_state_gradient_diff += delta_g_cur
 
-        global_model_param = avg_clnt_param + np.mean(clnt_param_drifts, axis=0)
+        global_model_param = avg_clnt_param + torch.mean(clnt_param_drifts, dim=0)
 
         self.model = set_client_from_params(self.model, global_model_param, self.device) 
 
@@ -402,20 +407,21 @@ class FLCLient:
         res = {'global':self.results, 'clients':self.client_results, 'train_time': self.train_time, 'communication_times':self.comm_times}
         torch.save(res, self.results_path)
 
-def get_mdl_params(model, n_par=None):
+def get_mdl_params(model, device, n_par=None):
     
     if n_par==None:
         n_par = 0
         for name, param in model.named_parameters():
             n_par += len(param.data.reshape(-1))
     
-    param_mat = np.zeros(n_par).astype('float32')
+    param_mat = torch.zeros(n_par, dtype=torch.float32, device=device)
     idx = 0
     for name, param in model.named_parameters():
-        temp = param.data.cpu().numpy().reshape(-1)
+        # temp = param.data.cpu().numpy().reshape(-1)
+        temp = param.reshape(-1)
         param_mat[idx:idx + len(temp)] = temp
         idx += len(temp)
-    return np.copy(param_mat)
+    return param_mat
 
 def set_client_from_params(mdl, params, device):
     dict_param = copy.deepcopy(dict(mdl.named_parameters()))
@@ -426,5 +432,5 @@ def set_client_from_params(mdl, params, device):
         dict_param[name].data.copy_(torch.tensor(params[idx:idx+length].reshape(weights.shape)).to(device))
         idx += length
     
-    mdl.load_state_dict(dict_param)    
+    mdl.load_state_dict(dict_param, strict=False)   
     return mdl
