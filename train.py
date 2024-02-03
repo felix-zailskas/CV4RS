@@ -50,7 +50,7 @@ def train(args):
         model_name = args.model
     elif args.model == "convmixer":
         model = create_convmixer(
-            channels=NUM_CHANNELS, num_classes=NUM_CLASSES, pretrained=False
+            channels=NUM_CHANNELS, num_classes=NUM_CLASSES, pretrained=args.pretrained
         )
         model_name = args.model
     elif args.model == "poolformer":
@@ -76,6 +76,7 @@ def train(args):
     global_logger = CustomLogger("GlobalLogger", f"./logs/{run_name}")
     global_logger.info(f"Using model: {type(model)}")
     global_logger.info(f"Using Dataset: {distr_type}")
+    global_logger.info(f"Using pretrained weights: {args.pretrained}")
 
     # setting training parameters
     csv_paths = [str(p) for p in Path(f"data/{distr_type}/").glob("*train*.csv")]
@@ -100,6 +101,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-DS", type=int, default=None, choices=[1, 2, 3])
     parser.add_argument("--algo", type=str, default="fedavg", choices=["fedavg"])
+    parser.add_argument("--pretrained", action='store_true') # default is False
     parser.add_argument(
         "--model",
         type=str,
