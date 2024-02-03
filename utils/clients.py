@@ -93,7 +93,7 @@ class FLCLient:
         self.alpha_coef = 0.1
         self.n_par = self.global_client.n_par
         self.state_gadient_diff = np.zeros((self.n_par)).astype('float32') 
-        self.drift_variable =  np.zeros((self.n_par)).astype('float32') # h_i
+        self.parameter_drift =  np.zeros((self.n_par)).astype('float32') # h_i
 
     def set_model(self, model: torch.nn.Module):
         self.model = copy.deepcopy(model)
@@ -136,32 +136,26 @@ class FLCLient:
 
         state_after = self.model.state_dict()
 
-        for param in self.model.parameters():
-            if not isinstance(local_parameter, torch.Tensor):
-            # Initially nothing to concatenate
-                local_parameter = param.reshape(-1)
-            else:
-                local_parameter = torch.cat((local_parameter, param.reshape(-1)), 0)
+        self.curr_model_par = get_mdl_params(self.model)
 
-        delta_param_curr = local_parameter - global_parameter
-        self.drift_variable += delta_param_curr
-        # n_minibatch = np.ceil(self.len_dataset/self.batch_size) * epochs
-        # beta = 1/n_minibatch/self.optimizer_kwargs['lr']
-        # state_g = self.local_update_last - self.global_update_last + beta * (-delta_param_curr)
-        # delta_g_cur = (state_g - self.state_gadient_diff)*dataset_weight 
-        # delta_g_sum += delta_g_cur
-        # self.state_gadient_diff = state_g 
-        # clnt_params_list[clnt] = curr_model_par 
+        delta_param_curr = self.curr_model_par - global_parameter
+        self.parameter_drift += delta_param_curr
+        n_minibatch = (np.ceil(self.len_dataset/self.batch_size) * epochs).astype(np.int64)
+        beta = 1/n_minibatch/self.optimizer_kwargs['lr']
+        state_g = self.local_update_last - self.global_update_last + beta * (-delta_param_curr)
+        delta_g_cur = (state_g - self.state_gadient_diff)*self.dataset_weight 
+        self.global_client.delta_g_sum += delta_g_cur
+        self.state_gadient_diff = state_g 
         
-        model_update = {}
-        for key, value_before in state_before.items():
-            value_after = state_after[key]
-            diff = value_after.type(torch.DoubleTensor) - value_before.type(
-                torch.DoubleTensor
-            )
-            model_update[key] = diff
+        # model_update = {}
+        # for key, value_before in state_before.items():
+        #     value_after = state_after[key]
+        #     diff = value_after.type(torch.DoubleTensor) - value_before.type(
+        #         torch.DoubleTensor
+        #     )
+        #     model_update[key] = diff
 
-        return model_update
+        # return model_update
 
     def change_sizes(self, labels):
         new_labels=np.zeros((len(labels[0]),19))
@@ -188,11 +182,12 @@ class FLCLient:
                 else:
                     local_parameter = torch.cat((local_parameter, param.reshape(-1)), 0)
             logits = self.model(data)
-            loss_cp = self.alpha/2 * torch.sum((local_parameter - (global_parameter - self.drift_variable))*(local_parameter - (global_parameter - self.drift_variable)))
+            loss_cp = self.alpha/2 * torch.sum((local_parameter - (global_parameter - self.parameter_drift))*(local_parameter - (global_parameter - self.parameter_drift)))
             loss_cg = torch.sum(local_parameter * self.state_update_diff) 
             
+            loss_fi = self.criterion(logits, label_new) / len(batch['label'])
 
-            loss = self.criterion(logits, label_new) + loss_cp + loss_cg
+            loss = loss_fi + loss_cp + loss_cg
             # loss = self.criterion(logits, label_new)
             loss.backward()
             self.optimizer.step()
@@ -274,7 +269,8 @@ class FLCLient:
             for param in self.model.parameters():
                 self.n_par += len(param.data.reshape(-1))
 
-            self.global_state_gradient_diff = np.zeros(self.n_par).astype('float32') 
+            self.global_state_gradient_diff = np.zeros(self.n_par).astype('float32')
+            self.delta_g_sum = np.zeros(self.n_par) 
 
             
             dt = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -371,17 +367,29 @@ class FLCLient:
     def communication_round(self, epochs: int):
         # here the clients train
         # TODO: could be parallelized
-        model_updates = [client.train_one_round(epochs) for client in self.clients]
+        for client in self.clients:
+            client.train_one_round(epochs)
 
-        # parameter aggregation
-        update_aggregation = self.aggregator.fed_avg(model_updates)
+        clnt_params_list = np.array([cl.curr_model_par for cl in self.clients])
+        clnt_param_drifts = np.array([cl.parameter_drift for cl in self.clients])
 
-        # update the global model
-        global_parameters = self.model.named_parameters()
-        for key, value in global_parameters.items():
-            update = update_aggregation[key].to(self.device)
-            global_parameters[key] = value + update
-        self.model.load_state_dict(dict(global_parameters))
+        avg_clnt_param = np.mean(clnt_params_list, axis = 0)
+        delta_g_cur = 1 / self.n_clients * self.delta_g_sum  
+        self.global_state_gradient_diff += delta_g_cur
+
+        global_model_param = avg_clnt_param + np.mean(clnt_param_drifts, axis=0)
+
+        self.model = set_client_from_params(self.model, global_model_param, self.device) 
+
+        # # parameter aggregation
+        # update_aggregation = self.aggregator.fed_avg(model_updates)
+
+        # # update the global model
+        # global_parameters = self.model.named_parameters()
+        # for key, value in global_parameters.items():
+        #     update = update_aggregation[key].to(self.device)
+        #     global_parameters[key] = value + update
+        # self.model.load_state_dict(dict(global_parameters))
 
     def save_state_dict(self):
         if not Path(self.state_dict_path).parent.is_dir():
@@ -393,3 +401,30 @@ class FLCLient:
             Path(self.results_path).parent.mkdir(parents=True)  
         res = {'global':self.results, 'clients':self.client_results, 'train_time': self.train_time, 'communication_times':self.comm_times}
         torch.save(res, self.results_path)
+
+def get_mdl_params(model, n_par=None):
+    
+    if n_par==None:
+        n_par = 0
+        for name, param in model.named_parameters():
+            n_par += len(param.data.reshape(-1))
+    
+    param_mat = np.zeros(n_par).astype('float32')
+    idx = 0
+    for name, param in model.named_parameters():
+        temp = param.data.cpu().numpy().reshape(-1)
+        param_mat[idx:idx + len(temp)] = temp
+        idx += len(temp)
+    return np.copy(param_mat)
+
+def set_client_from_params(mdl, params, device):
+    dict_param = copy.deepcopy(dict(mdl.named_parameters()))
+    idx = 0
+    for name, param in mdl.named_parameters():
+        weights = param.data
+        length = len(weights.reshape(-1))
+        dict_param[name].data.copy_(torch.tensor(params[idx:idx+length].reshape(weights.shape)).to(device))
+        idx += length
+    
+    mdl.load_state_dict(dict_param)    
+    return mdl
