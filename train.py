@@ -6,7 +6,7 @@ from pathlib import Path
 
 from logger.logger import CustomLogger
 from models.ConvMixer import create_convmixer
-from models.MLPMixer import create_mlp_mixer
+from models.MLPMixer import _create_mixer
 from models.poolformer import create_poolformer_s12
 from utils.clients import GlobalClient
 from utils.pytorch_models import ResNet50
@@ -46,7 +46,8 @@ def train(args):
     input_args.append(avg_algorithm)
     # used model type
     if args.model == "mlpmixer":
-        model = create_mlp_mixer(NUM_CHANNELS, NUM_CLASSES)
+        model_args = dict(patch_size=8, num_blocks=8, embed_dim=512, img_size=120,num_classes=NUM_CLASSES,in_chans=NUM_CHANNELS) #best results
+        model = _create_mixer('mixer_s16_224', pretrained=False, **model_args)
         model_name = args.model
     elif args.model == "convmixer":
         model = create_convmixer(
