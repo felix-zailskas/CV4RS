@@ -52,7 +52,7 @@ class FLCLient:
         optimizer_constructor: callable = torch.optim.Adam,
         optimizer_kwargs: dict = {"lr": 0.001, "weight_decay": 0},
         criterion_constructor: callable = torch.nn.BCEWithLogitsLoss,
-        criterion_kwargs: dict = {"reduction": "mean"},
+        criterion_kwargs: dict = {"reduction": "sum"},
         num_classes: int = 19,
         device: torch.device = torch.device("cpu"),
         dataset_filter: str = "serbia",
@@ -178,10 +178,12 @@ class FLCLient:
         self.model.train()
         for idx, batch in enumerate(tqdm(self.train_loader, desc="training")):
             data, labels, index = batch["data"], batch["label"], batch["index"]
-            data = data.cuda()
+            # data = data.cuda()
+            data = data.to(self.device)
             label_new = np.copy(labels)
             label_new = self.change_sizes(label_new)
-            label_new = torch.from_numpy(label_new).cuda()
+            # label_new = torch.from_numpy(label_new).cuda()
+            label_new = torch.from_numpy(label_new).to(self.device)
             self.optimizer.zero_grad()
 
             local_parameter = None  # θ_i
@@ -207,6 +209,7 @@ class FLCLient:
 
             loss = loss_fi + loss_cp + loss_cg
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(parameters=self.model.parameters(), max_norm=10) # Clip gradients to prevent exploding
             self.optimizer.step()
 
     def validation_round(self):
@@ -337,7 +340,7 @@ class GlobalClient:
             comm_time = time.perf_counter() - comm_start
             print(f"Time communication round: {comm_time}")
             self.comm_times.append(comm_time)
-            print(torch.cuda.memory_summary())
+            # print(torch.cuda.memory_summary())
             report = self.validation_round()
 
             self.results = update_results(self.results, report, self.num_classes)
