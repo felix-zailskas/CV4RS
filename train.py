@@ -6,6 +6,7 @@ from models.poolformer import create_poolformer_s12
 from models.ConvMixer import create_convmixer
 from models.MLPMixer import create_mlp_mixer
 from utils.clients import GlobalClient
+from utils.clients_feddc import GlobalClientFedDC
 from utils.pytorch_utils import start_cuda
 import argparse
 
@@ -36,12 +37,18 @@ def train(args):
 	elif args.model == 'poolformer':
 		model = create_poolformer_s12(in_chans=channels, num_classes=num_classes)
 	elif args.model == 'resnet':
-		model = ResNet50("ResNet50", channels=channels, num_cls=num_classes, pretrained=False)
+		model = ResNet50("ResNet50", channels=channels, num_cls=num_classes)
 	else:
 		raise ValueError("Passed model name is not defined")
 	print(f'Using model: {type(model)}')
 
-	global_client = GlobalClient(
+	# global_client = GlobalClient(
+	# 	model=model,
+	# 	lmdb_path="/faststorage/BigEarthNet_S1_S2/BEN_S1_S2.lmdb",
+	# 	val_path=f"data/{distr_type}/all_test.csv",
+	# 	csv_paths=csv_paths,
+	# )
+	global_client = GlobalClientFedDC(
 		model=model,
 		lmdb_path="/faststorage/BigEarthNet_S1_S2/BEN_S1_S2.lmdb",
 		val_path=f"data/{distr_type}/all_test.csv",

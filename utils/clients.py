@@ -106,29 +106,32 @@ class FLCLient:
         self.dataset_weight = self.len_dataset / self.total_len_dataset * self.n_clients
 
     def train_one_round(self, epochs: int, validate: bool = False):
-        state_before = copy.deepcopy(self.model)
-        state_before.to(self.device)
-        state_before = state_before.named_parameters()
+        # state_before = copy.deepcopy(self.model)
+        # state_before.to(self.device)
+        # state_before = state_before.named_parameters().detach()
 
         # get global parameters ω as torch tensor
-        global_parameter = None
-        for name, param in state_before:
-            if not isinstance(global_parameter, torch.Tensor):
-                # Initially nothing to concatenate
-                global_parameter = param.reshape(-1)
-            else:
-                global_parameter = torch.cat((global_parameter, param.reshape(-1)), 0)
+        # global_parameter = None
+        # for name, param in state_before.items():
+        #     if not isinstance(global_parameter, torch.Tensor):
+        #         # Initially nothing to concatenate
+        #         global_parameter = param.reshape(-1)
+        #     else:
+        #         global_parameter = torch.cat((global_parameter, param.reshape(-1)), 0)
+        global_parameter = get_mdl_params(self.model, self.device)
 
-        self.local_update_last = self.state_gadient_diff  # Δθ_i
+
+        self.local_update_last = self.state_gadient_diff.clone().detach()  # Δθ_i
         self.alpha = self.alpha_coef / self.dataset_weight  # α
         self.global_update_last = (
-            self.global_client.global_state_gradient_diff / self.dataset_weight
+            self.global_client.global_state_gradient_diff.clone().detach() / self.dataset_weight
         )  # Δθ
-        self.state_update_diff = torch.tensor(
-            -self.local_update_last + self.global_update_last,
-            dtype=torch.float32,
-            device=self.device,
-        )
+        # self.state_update_diff = torch.tensor(
+        #     -self.local_update_last + self.global_update_last,
+        #     dtype=torch.float32,
+        #     device=self.device,
+        # )
+        self.state_update_diff = -self.local_update_last.clone().detach() + self.global_update_last.clone().detach()
         
         self.optimizer = self.optimizer_constructor(
             self.model.parameters(), **self.optimizer_kwargs
@@ -145,12 +148,12 @@ class FLCLient:
             report = self.validation_round()
             self.results = update_results(self.results, report, self.num_classes)
 
-        state_after = self.model.state_dict()
+        # state_after = self.model.state_dict()
 
         self.curr_model_par = get_mdl_params(self.model, self.device)
 
         delta_param_curr = self.curr_model_par - global_parameter
-        self.parameter_drift += delta_param_curr
+        self.parameter_drift += delta_param_curr.detach()
 
         n_minibatch = (np.ceil(self.len_dataset / self.batch_size) * epochs).astype(
             np.int64
@@ -164,8 +167,8 @@ class FLCLient:
         )
         delta_g_cur = (state_g - self.state_gadient_diff) * self.dataset_weight
 
-        self.global_client.delta_g_sum += delta_g_cur
-        self.state_gadient_diff = state_g
+        self.global_client.delta_g_sum += delta_g_cur.detach()
+        self.state_gadient_diff = state_g.detach()
 
     def change_sizes(self, labels):
         new_labels = np.zeros((len(labels[0]), 19))
@@ -186,13 +189,14 @@ class FLCLient:
             label_new = torch.from_numpy(label_new).to(self.device)
             self.optimizer.zero_grad()
 
-            local_parameter = None  # θ_i
-            for param in self.model.parameters():
-                if not isinstance(local_parameter, torch.Tensor):
-                    # Initially nothing to concatenate
-                    local_parameter = param.reshape(-1)
-                else:
-                    local_parameter = torch.cat((local_parameter, param.reshape(-1)), 0)
+            # local_parameter = None  # θ_i
+            # for param in self.model.parameters():
+            #     if not isinstance(local_parameter, torch.Tensor):
+            #         # Initially nothing to concatenate
+            #         local_parameter = param.reshape(-1)
+            #     else:
+            #         local_parameter = torch.cat((local_parameter, param.reshape(-1)), 0)
+            local_parameter = get_mdl_params(self.model, self.device)  # θ_i
 
             logits = self.model(data)
             loss_cp = (
@@ -340,7 +344,7 @@ class GlobalClient:
             comm_time = time.perf_counter() - comm_start
             print(f"Time communication round: {comm_time}")
             self.comm_times.append(comm_time)
-            # print(torch.cuda.memory_summary())
+            print(torch.cuda.memory_summary())
             report = self.validation_round()
 
             self.results = update_results(self.results, report, self.num_classes)
@@ -385,7 +389,9 @@ class GlobalClient:
                 label_new = self.change_sizes(label_new)
 
                 logits = self.model(data)
+                print(f"{batch_idx} : MODEL PREDICTION NAN: {torch.isnan(logits).any()}")
                 probs = torch.sigmoid(logits).cpu().numpy()
+                print(f"{batch_idx} : SIGMOID FUNCTION NAN: {torch.isnan(logits).any()}")
 
                 predicted_probs += list(probs)
 
@@ -405,9 +411,9 @@ class GlobalClient:
         for client in self.clients:
             client.train_one_round(epochs)
 
-        clnt_params_list = torch.stack([cl.curr_model_par.cpu() for cl in self.clients])
+        clnt_params_list = torch.stack([cl.curr_model_par.cpu().clone().detach() for cl in self.clients])
         clnt_param_drifts = torch.stack(
-            [cl.parameter_drift.cpu() for cl in self.clients]
+            [cl.parameter_drift.cpu().clone().detach() for cl in self.clients]
         )
 
         avg_clnt_param = torch.mean(clnt_params_list, dim=0)
@@ -447,7 +453,7 @@ def get_mdl_params(model, device, n_par=None):
     param_mat = torch.zeros(n_par, dtype=torch.float32, device=device)
     idx = 0
     for name, param in model.named_parameters():
-        temp = param.data.cpu().reshape(-1)
+        temp = param.data.cpu().reshape(-1).detach()
         param_mat[idx : idx + len(temp)] = temp
         idx += len(temp)
     return param_mat
@@ -460,9 +466,9 @@ def set_client_from_params(mdl, params, device):
         weights = param.data
         length = len(weights.reshape(-1))
         dict_param[name].data.copy_(
-            torch.tensor(params[idx : idx + length].reshape(weights.shape)).to(device)
+            params[idx : idx + length].reshape(weights.shape).clone().detach().to(device)
         )
         idx += length
-
+    # dict_param.to(device)
     mdl.load_state_dict(dict_param, strict=False)
     return mdl
