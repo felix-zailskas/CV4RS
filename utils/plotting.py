@@ -121,11 +121,11 @@ def create_model_comparison_plot(
     plt.tight_layout()
 
     if save_micro is not None:
-        micro_fig.savefig(save_micro)
+        micro_fig.savefig(save_micro, dpi=500)
     if save_macro is not None:
-        macro_fig.savefig(save_macro)
+        macro_fig.savefig(save_macro, dpi=500)
     if save_weighted is not None:
-        macro_fig.savefig(save_weighted)
+        weighted_fig.savefig(save_weighted, dpi=500)
 
     if show:
         plt.show()
