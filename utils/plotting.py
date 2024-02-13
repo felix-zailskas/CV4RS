@@ -76,11 +76,13 @@ def create_model_comparison_plot(
     show: bool = True,
     save_micro: str = None,
     save_macro: str = None,
+    save_weighted: str = None,
     labels: list[str] = None,
     model_type: str = None
 ):
     micro_fig, micro_ax = plt.subplots(figsize=(6, 4))
     macro_fig, macro_ax = plt.subplots(figsize=(6, 4))
+    weighted_fig, weighted_ax = plt.subplots(figsize=(6, 4))
 
     # Create plots for micro and macro data
     create_plot(
@@ -97,6 +99,13 @@ def create_model_comparison_plot(
         ylab="F1-Score in %",
         labels=labels,
     )
+    create_plot(
+        data["weighted avg"],
+        axis=weighted_ax,
+        fields=model_types,
+        ylab="F1-Score in %",
+        labels=labels,
+    )
 
     # adjust figure name etc.
     micro_ax.set_title(f"{model_type} F1-Score Micro Average")
@@ -105,6 +114,9 @@ def create_model_comparison_plot(
     macro_ax.set_title(f"{model_type} F1-Score Macro Average")
     macro_ax.set_xlabel(f"Communication Rounds")
     macro_ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    weighted_ax.set_title(f"{model_type} F1-Score Weighted Average")
+    weighted_ax.set_xlabel(f"Communication Rounds")
+    weighted_ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
     plt.tight_layout()
 
@@ -112,6 +124,8 @@ def create_model_comparison_plot(
         micro_fig.savefig(save_micro)
     if save_macro is not None:
         macro_fig.savefig(save_macro)
+    if save_weighted is not None:
+        macro_fig.savefig(save_weighted)
 
     if show:
         plt.show()
