@@ -82,6 +82,15 @@ def get_classification_report(
         ireland_indices = np.delete(np.arange(0, 19), [3, 7])
         y_true = y_true[:, ireland_indices]
         predicted_probs = predicted_probs[:, ireland_indices]
+    print("PRECISION SCORE INVESTIGATION")
+    print("TRUE LABELS")
+    print(np.isnan(y_true).any())
+    print(np.isinf(y_true).any())
+    print(y_true)
+    print("PRED LABELS")
+    print(np.isnan(predicted_probs).any())
+    print(np.isinf(predicted_probs).any())
+    print(predicted_probs)
     ap_mic = average_precision_score(y_true, predicted_probs, average="micro")
     ap_mac = average_precision_score(y_true, predicted_probs, average="macro")
     report.update({"ap_mic": ap_mic, "ap_mac": ap_mac})

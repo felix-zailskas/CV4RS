@@ -1,3 +1,8 @@
+from pathlib import Path
+from utils.pytorch_models import ResNet50
+from models.poolformer import create_poolformer_s12
+from models.ConvMixer import create_convmixer
+from utils.clients import GlobalClient
 import argparse
 import datetime
 import multiprocessing as mp
@@ -46,7 +51,7 @@ def train(args):
     input_args.append(avg_algorithm)
     # used model type
     if args.model == "mlpmixer":
-        model_args = dict(patch_size=8, num_blocks=8, embed_dim=512, img_size=120,num_classes=NUM_CLASSES,in_chans=NUM_CHANNELS) #best results
+        model_args = dict(patch_size=8, num_blocks=8, embed_dim=512, img_size=120, num_classes=NUM_CLASSES,in_chans=NUM_CHANNELS) #best results
         model = _create_mixer('mixer_s16_224', pretrained=False, **model_args)
         model_name = args.model
     elif args.model == "convmixer":
@@ -55,7 +60,7 @@ def train(args):
         )
         model_name = args.model
     elif args.model == "poolformer":
-        model = create_poolformer_s12(layers=[2, 3, 5, 3], in_chans=NUM_CHANNELS, num_classes=NUM_CLASSES)
+        model = create_poolformer_s12(layers=[2, 2, 6, 2], in_chans=NUM_CHANNELS, num_classes=NUM_CLASSES)
         model_name = args.model
     elif args.model == "resnet":
         model = ResNet50(
