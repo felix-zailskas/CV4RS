@@ -8,7 +8,8 @@ from logger.logger import CustomLogger
 from models.ConvMixer import create_convmixer
 from models.MLPMixer import _create_mixer
 from models.poolformer import create_poolformer_s12
-from utils.clients import GlobalClient
+from utils.clients import GlobalClientFedAvg
+from utils.clients_feddc import GlobalClientFedDC
 from utils.pytorch_models import ResNet50
 
 abspath = os.path.abspath(__file__)
@@ -74,6 +75,14 @@ def train(args):
     else:
         raise ValueError("Passed model name is not defined")
     input_args.append(model_name)
+    # used algorithm
+    if args.algo == "fedavg":
+        algorithm = "fedavg"
+    elif args.algo == "moon":
+        algorithm = "moon"
+    elif args.algo == "feddc":
+        algorithm = "feddc"
+    input_args.append(algorithm)
 
     selected_args_str = "/".join(input_args)
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -88,18 +97,38 @@ def train(args):
     global_logger.info(f"Using Dataset: {distr_type}")
     global_logger.info(f"Using pretrained weights: {args.pretrained}")
 
+    # check for feddc use
+    if algorithm == "feddc" and not args.feddc:
+        global_logger.error(
+            "Cannot use faulty implementation of FedDC without the flag `--feddc`"
+        )
+        exit()
+    elif algorithm == "moon":
+        global_logger.error("MOON currently not implemented")
+        exit()
+
     # setting training parameters
     csv_paths = [str(p) for p in Path(f"data/{distr_type}/").glob("*train*.csv")]
-
-    global_client = GlobalClient(
-        model=model,
-        lmdb_path="/faststorage/BigEarthNet_S1_S2/BEN_S1_S2.lmdb",
-        val_path=f"data/{distr_type}/all_test.csv",
-        csv_paths=csv_paths,
-        name=f"GlobalModel_{args.model}",
-        logger=global_logger,
-        run_name=run_name,
-    )
+    if algorithm == "fedavg":
+        global_client = GlobalClientFedAvg(
+            model=model,
+            lmdb_path="/faststorage/BigEarthNet_S1_S2/BEN_S1_S2.lmdb",
+            val_path=f"data/{distr_type}/all_test.csv",
+            csv_paths=csv_paths,
+            name=f"GlobalModel_{args.model}",
+            logger=global_logger,
+            run_name=run_name,
+        )
+    elif algorithm == "feddc":
+        global_client = GlobalClientFedDC(
+            model=model,
+            lmdb_path="/faststorage/BigEarthNet_S1_S2/BEN_S1_S2.lmdb",
+            val_path=f"data/{distr_type}/all_test.csv",
+            csv_paths=csv_paths,
+            name=f"GlobalModel_{args.model}",
+            logger=global_logger,
+            run_name=run_name,
+        )
     global_model, global_results = global_client.train(
         communication_rounds=GLOBAL_COMMUNICATION_ROUNDS, epochs=LOCAL_EPOCHS
     )
@@ -110,7 +139,10 @@ if __name__ == "__main__":
     mp.set_start_method("spawn")
     parser = argparse.ArgumentParser()
     parser.add_argument("-DS", type=int, default=None, choices=[1, 2, 3])
-    parser.add_argument("--algo", type=str, default="fedavg", choices=["fedavg"])
+    parser.add_argument(
+        "--algo", type=str, default="fedavg", choices=["fedavg", "feddc", "moon"]
+    )
+    parser.add_argument("--feddc", action="store_true")
     parser.add_argument("--pretrained", action="store_true")  # default is False
     parser.add_argument(
         "--model",

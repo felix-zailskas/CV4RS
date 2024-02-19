@@ -14,6 +14,7 @@ from logger.logger import CustomLogger
 from utils.gpu_parallelization import GPUWorker, parallel_gpu_work
 from utils.pytorch_datasets import Ben19Dataset
 from utils.pytorch_utils import (
+    change_sizes,
     get_classification_report,
     init_results,
     print_micro_macro,
@@ -21,7 +22,18 @@ from utils.pytorch_utils import (
 )
 
 
-def fed_avg(model_updates: list[dict]):
+def fed_avg(model_updates: list[dict]) -> dict:
+    """
+    Federated Averaging function. Takes a list of model parameters and computes the
+    average of all of them with equal weight. Expects model updates to be from the
+    same architecture.
+
+    Args:
+        model_updates (list[dict]): Model updates that should be averaged.
+
+    Returns:
+        dict: Averaged model updates.
+    """
     assert len(model_updates) > 0, "Trying to aggregate empty update list"
 
     update_aggregation = {}
@@ -34,12 +46,17 @@ def fed_avg(model_updates: list[dict]):
 
 
 class FLCLient:
+    """
+    Implementation of the local clients in the federated learning setup. The client can
+    be initialized with any model type that extends the torch.nn.Module class.
+    """
+
     def __init__(
         self,
         model: torch.nn.Module,
         lmdb_path: str,
         val_path: str,
-        csv_path: list[str],
+        csv_path: str,
         batch_size: int = 128,
         num_workers: int = 0,
         optimizer_constructor: callable = torch.optim.Adam,
@@ -53,37 +70,35 @@ class FLCLient:
         logger: CustomLogger = None,
         run_name: str = "",
     ) -> None:
+        # logging metadata
         self.name = name
         self.logger = (
             logger
             if logger is not None
             else CustomLogger(self.name, f"./logs/{run_name}")
         )
+        # training metadata
         self.model = model
-        self.previous_model = model
-        self.global_model = model
+        self.device = device
         self.optimizer_constructor = optimizer_constructor
         self.optimizer_kwargs = optimizer_kwargs
         self.criterion_constructor = criterion_constructor
         self.criterion_kwargs = criterion_kwargs
         self.num_classes = num_classes
         self.dataset_filter = dataset_filter
+        # training data
         self.results = init_results(self.num_classes)
-        self.dataset = Ben19Dataset(lmdb_path, csv_path)
         self.train_loader = DataLoader(
-            self.dataset,
+            Ben19Dataset(lmdb_path, csv_path),
             batch_size=batch_size,
             num_workers=num_workers,
             shuffle=True,
             pin_memory=True,
         )
-        self.device = device
-
-        self.validation_set = Ben19Dataset(
-            lmdb_path=lmdb_path, csv_path=val_path, img_transform="default"
-        )
         self.val_loader = DataLoader(
-            self.validation_set,
+            Ben19Dataset(
+                lmdb_path=lmdb_path, csv_path=val_path, img_transform="default"
+            ),
             batch_size=batch_size,
             num_workers=num_workers,
             shuffle=False,
@@ -91,48 +106,63 @@ class FLCLient:
         )
 
     def set_model(self, model: torch.nn.Module):
+        """
+        Set current model of this client.
+
+        Args:
+            model (torch.nn.Module): Model to set.
+        """
         self.model = copy.deepcopy(model)
 
     def train_one_round(
-        self, epochs: int, training_device=None, validate: bool = False
-    ):
+        self, epochs: int, training_device: torch.device = None, validate: bool = False
+    ) -> dict:
+        """
+        Performs one training iteration for this client including a specified amount of
+        epochs.
+
+        Args:
+            epochs (int): Amount of epochs to train for.
+            training_device (torch.device, optional): Device that the model should be
+                trained on. If this is None than the device specified in the constructor
+                will be used. Defaults to None.
+            validate (bool, optional): If True the client will perform validation rounds
+                of the local model. Defaults to False.
+
+        Returns:
+            dict: The model updates the local training iteration produced.
+        """
+        # save state before training to compute model updates later
         state_before = copy.deepcopy(self.model.state_dict())
-        self.global_model = copy.deepcopy(
-            self.model
-        )  # save current model as global model
+        # put model on correct device
         if training_device is None:
             self.logger.info(f"Putting model {self.name} onto {self.device}")
             self.model.to(self.device)
-            self.global_model.to(self.device)
         else:
             self.logger.info(f"Putting model {self.name} onto {training_device}")
             self.model.to(training_device)
-            self.global_model.to(training_device)
 
-        # optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001, weight_decay=0)
-        # criterion = torch.nn.BCEWithLogitsLoss(reduction="mean")
+        # initialize training methods
         self.optimizer = self.optimizer_constructor(
             self.model.parameters(), **self.optimizer_kwargs
         )
         self.criterion = self.criterion_constructor(**self.criterion_kwargs)
-
+        # training loop
         for epoch in range(1, epochs + 1):
             self.logger.info("Epoch {}/{}".format(epoch, epochs))
 
             self.train_epoch(training_device)
-
         self.logger.info("Training done!")
+
+        # validation loop
         if validate:
             self.logger.info("validation started")
             report = self.validation_round(training_device)
             self.results = update_results(self.results, report, self.num_classes)
             self.logger.info("Validation done!")
 
+        # compute model updates after training
         state_after = self.model.state_dict()
-        self.previous_model = copy.deepcopy(
-            self.model
-        )  # save previous model for next iteration
-
         model_update = {}
         for key, value_before in state_before.items():
             value_after = state_after[key]
@@ -143,28 +173,29 @@ class FLCLient:
 
         return model_update
 
-    def change_sizes(self, labels):
-        new_labels = np.zeros((len(labels[0]), 19))
-        for i in range(len(labels[0])):  # 128
-            for j in range(len(labels)):  # 19
-                new_labels[i, j] = int(labels[j][i])
-        return new_labels
+    def train_epoch(self, training_device: torch.device = None):
+        """
+        Perform one epoch of training and update the parameters of this client's model.
 
-    def train_epoch(self, training_device=None):
+        Args:
+            training_device (torch.device, optional): Device that the model should be
+                trained on. If this is None than the device specified in the constructor
+                will be used. Defaults to None.
+        """
         self.model.train()
-        for idx, batch in enumerate(
+        for _, batch in enumerate(
             tqdm(
                 self.train_loader,
                 desc=f"training {self.name} on device {training_device if training_device is not None else self.device}",
             )
         ):
-            data, labels, index = batch["data"], batch["label"], batch["index"]
+            data, labels, _ = batch["data"], batch["label"], batch["index"]
             if training_device is None:
                 data = data.to(self.device)
             else:
                 data = data.to(training_device)
             label_new = np.copy(labels)
-            label_new = self.change_sizes(label_new)
+            label_new = change_sizes(label_new)
             if training_device is None:
                 label_new = torch.from_numpy(label_new).to(self.device)
             else:
@@ -175,56 +206,32 @@ class FLCLient:
             loss = self.criterion(logits, label_new)
             loss.backward()
             self.optimizer.step()
-            # ------ MOON INITIAL IMPLEMENTATION ----------
-            """
-            data, labels, index = batch["data"], batch["label"], batch["index"]
-            # data = data.cuda()
-            if training_device is None:
-                data = data.to(self.device)
-            else:
-                data = data.to(training_device)
-            label_new=np.copy(labels)
-            label_new=self.change_sizes(label_new)
-            # label_new = torch.from_numpy(label_new).cuda()
-            if training_device is None:
-                label_new = torch.from_numpy(label_new).to(self.device)
-            else:
-                label_new = torch.from_numpy(label_new).to(training_device)
-            self.optimizer.zero_grad()
 
-            l_sup = torch.nn.CrossEntropyLoss()(self.model(data), label_new)
-            z = self.model(data, features_only=True)
-            z_global = self.global_model(data, features_only=True)
-            z_prev = self.previous_model(data, features_only=True)
+    def validation_round(self, training_device: torch.device = None) -> str | dict:
+        """
+        Perform validation round on client's model.
 
-            exp1 = torch.exp(torch.nn.functional.cosine_similarity(z,z_global) / 0.5)  #temperature default:0.5 ?
-            exp2 = torch.exp(torch.nn.functional.cosine_similarity(z,z_prev) / 0.5)    #temperature default:0.5 ?
+        Args:
+            training_device (torch.device, optional): Device that the model should be
+                trained on. If this is None than the device specified in the constructor
+                will be used. Defaults to None.
 
-            l_con = -torch.log(exp1 / (exp1 + exp2))
-
-            loss = l_sup + 1 * l_con.sum() #µ default:1 ?
-
-            #logits = self.model(data)
-            #loss = self.criterion(logits, label_new)
-            loss.backward()
-            self.optimizer.step()
-            """
-
-    def validation_round(self, training_device=None):
+        Returns:
+            (str | dict): classification report of the current model state.
+        """
         self.model.eval()
         y_true = []
         predicted_probs = []
 
         with torch.no_grad():
-            for batch_idx, batch in enumerate(tqdm(self.val_loader, desc="test")):
-                # data = batch["data"].to(self.device)
+            for _, batch in enumerate(tqdm(self.val_loader, desc="test")):
                 if training_device is None:
                     data = batch["data"].to(self.device)
                 else:
                     data = batch["data"].to(training_device)
                 labels = batch["label"]
                 label_new = np.copy(labels)
-                label_new = self.change_sizes(label_new)
+                label_new = change_sizes(label_new)
 
                 logits = self.model(data)
                 probs = torch.sigmoid(logits).cpu().numpy()
@@ -242,11 +249,22 @@ class FLCLient:
         )
         return report
 
-    def get_validation_results(self):
+    def get_validation_results(self) -> dict:
+        """
+        Return validation results created during training if validation flag was set.
+
+        Returns:
+            dict: Validation results of the clients training
+        """
         return self.results
 
 
-class GlobalClient:
+class GlobalClientFedAvg:
+    """
+    Implementation of the global client in the federated learning setup. The client can
+    be initialized with any model type that extends the torch.nn.Module class.
+    """
+
     def __init__(
         self,
         model: torch.nn.Module,
@@ -263,8 +281,10 @@ class GlobalClient:
         logger: CustomLogger = None,
         run_name: str = "",
     ) -> None:
+        # logging metadata
         self.name = name
-        self.model = model
+        if run_name == "":
+            run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.logger = (
             logger
             if logger is not None
@@ -279,12 +299,16 @@ class GlobalClient:
             self.device = torch.device(0)
             # GPU parallelization is active for more than one GPU
             self.gpu_parallelization = torch.cuda.device_count() > 1
-
         self.logger.info(f"Using device: {self.device}")
+
+        # training metadata
+        self.model = model
         self.model.to(self.device)
         self.num_classes = num_classes
         self.dataset_filter = dataset_filter
         self.results = init_results(self.num_classes)
+        self.train_time = None
+        # if gpu parallelization is active we only need the data loaders and no client objects
         if self.gpu_parallelization:
             self.train_loaders = [
                 DataLoader(
@@ -321,17 +345,29 @@ class GlobalClient:
             shuffle=False,
             pin_memory=True,
         )
-        self.train_time = None
 
-        if run_name == "":
-            run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        # set output paths if not specified by user
         if state_dict_path is None:
             self.state_dict_path = f"checkpoints/{run_name}.pkl"
-
+        else:
+            self.state_dict_path = state_dict_path
         if results_path is None:
             self.results_path = f"results/{run_name}.pkl"
+        else:
+            self.results_path = results_path
 
-    def train(self, communication_rounds: int, epochs: int):
+    def train(self, communication_rounds: int, epochs: int) -> tuple[dict, list[dict]]:
+        """
+        Perform the full training of the global model for the specified amount of
+        communication rounds and epochs.
+
+        Args:
+            communication_rounds (int): Communication rounds to train for globally.
+            epochs (int): Epochs to train for locally.
+
+        Returns:
+            tuple[dict, list[dict]]: Training results of this global model and all local clients.
+        """
         self.comm_times = []
         train_start = time.perf_counter()
         for com_round in range(1, communication_rounds + 1):
@@ -354,12 +390,9 @@ class GlobalClient:
             for client in self.clients:
                 client.set_model(self.model)
 
+            # save model state every 5 communication rounds
             if com_round % 5 == 0:
                 self.save_state_dict()
-                # self.client_results = [
-                #     client.get_validation_results() for client in self.clients
-                # ]
-                # self.save_results()
 
         self.train_time = time.perf_counter() - train_start
 
@@ -370,26 +403,25 @@ class GlobalClient:
         self.save_state_dict()
         return self.results, self.client_results
 
-    def change_sizes(self, labels):
-        new_labels = np.zeros((len(labels[0]), 19))
-        for i in range(len(labels[0])):  # 128
-            for j in range(len(labels)):  # 19
-                new_labels[i, j] = int(labels[j][i])
-        return new_labels
+    def validation_round(self) -> str | dict:
+        """
+        Perform validation round on global client's model.
 
-    def validation_round(self):
+        Returns:
+            (str | dict): classification report of the current model state.
+        """
         self.model.eval()
         y_true = []
         predicted_probs = []
 
         with torch.no_grad():
-            for batch_idx, batch in enumerate(
+            for _, batch in enumerate(
                 tqdm(self.val_loader, desc="Validation round global model")
             ):
                 data = batch["data"].to(self.device)
                 labels = batch["label"]
                 label_new = np.copy(labels)
-                label_new = self.change_sizes(label_new)
+                label_new = change_sizes(label_new)
 
                 logits = self.model(data)
                 probs = torch.sigmoid(logits).cpu().numpy()
@@ -407,9 +439,15 @@ class GlobalClient:
         )
         return report
 
-    def apply_model_updates(self, model_updates):
+    def apply_model_updates(self, model_updates: list[dict]):
+        """
+        Apply model updates based on the local clients updates.
+
+        Args:
+            model_updates (list[dict]): List of all updates of the local clients to consider.
+        """
         # parameter aggregation
-        self.logger.info("inside model update")
+        self.logger.info("Starting model update aggregation")
         update_aggregation = fed_avg(model_updates)
         self.logger.info("Model update aggregation complete")
         # update the global model
@@ -421,6 +459,12 @@ class GlobalClient:
         self.logger.info("Communication round done")
 
     def sequential_communication_round(self, epochs: int):
+        """
+        Perform communication round where local clients are trained sequentially.
+
+        Args:
+            epochs (int): Amount of epochs to train for.
+        """
         if self.device is torch.device("cpu"):
             self.logger.info("Starting communication round on CPU")
         else:
@@ -434,7 +478,12 @@ class GlobalClient:
         self.apply_model_updates(model_updates)
 
     def parallel_communication_round(self, epochs: int):
-        # here the clients train
+        """
+        Perform communication round where local clients are trained in parallel.
+
+        Args:
+            epochs (int): Amount of epochs to train for.
+        """
         self.logger.info(
             f"Starting communication round on ({torch.cuda.device_count()}) GPUs"
         )
@@ -470,11 +519,17 @@ class GlobalClient:
         self.apply_model_updates(model_updates)
 
     def save_state_dict(self):
+        """
+        Save state dict of the current global model.
+        """
         if not Path(self.state_dict_path).parent.is_dir():
             Path(self.state_dict_path).parent.mkdir(parents=True)
         torch.save(self.model.state_dict(), self.state_dict_path)
 
     def save_results(self):
+        """
+        Save all training results.
+        """
         if not Path(self.results_path).parent.is_dir():
             Path(self.results_path).parent.mkdir(parents=True)
         res = {
