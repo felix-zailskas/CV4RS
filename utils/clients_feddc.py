@@ -282,24 +282,14 @@ class GlobalClientFedDC:
             self.results = update_results(self.results, report, self.num_classes)
             print_micro_macro(report)
 
-            for client in self.clients:
-                client.set_model(self.model)
-
             if com_round % 5 == 0:
                 self.save_state_dict()
-                self.client_results = [
-                    client.get_validation_results() for client in self.clients
-                ]
-                # self.save_results()
 
         self.train_time = time.perf_counter() - start
 
-        self.client_results = [
-            client.get_validation_results() for client in self.clients
-        ]
         self.save_results()
         self.save_state_dict()
-        return self.results, self.client_results
+        return self.results, None
 
     def validation_round(self):
         self.cur_cld_model.eval()
@@ -399,9 +389,12 @@ class GlobalClientFedDC:
 
         avg_mdl_param = np.mean(self.clnt_params_list, axis=0)
         delta_g_cur = 1 / self.n_clients * delta_g_sum
-        self.state_gradient_diffs[-1] += delta_g_cur.reshape(
-            delta_g_cur.shape[1],
-        )
+        if len(delta_g_cur.shape) > 1:
+            self.state_gradient_diffs[-1] += delta_g_cur.reshape(
+                delta_g_cur.shape[1],
+            )
+        else:
+            self.state_gradient_diffs[-1] += delta_g_cur
 
         self.cld_mdl_param = avg_mdl_param + np.mean(self.parameter_drifts, axis=0)
         self.avg_model = set_client_from_params(
@@ -425,7 +418,6 @@ class GlobalClientFedDC:
             Path(self.results_path).parent.mkdir(parents=True)
         res = {
             "global": self.results,
-            "clients": self.client_results,
             "train_time": self.train_time,
             "communication_times": self.comm_times,
         }
