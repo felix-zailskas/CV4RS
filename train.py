@@ -17,8 +17,8 @@ dname = os.path.dirname(abspath)
 os.chdir(dname)
 
 
-LOCAL_EPOCHS = 3  # amount of epochs each client trains for locally
-GLOBAL_COMMUNICATION_ROUNDS = 20  # amount of communication rounds the global model
+LOCAL_EPOCHS = 1  # amount of epochs each client trains for locally
+GLOBAL_COMMUNICATION_ROUNDS = 1  # amount of communication rounds the global model
 NUM_CHANNELS = 10
 NUM_CLASSES = 19
 
@@ -41,10 +41,14 @@ def train(args):
     input_args.append(distr_type)
     # averaging algorithm
     if args.algo == "fedavg":
-        avg_algorithm = "fedavg"
+        algorithm = "fedavg"
+    elif args.algo == "moon":
+        algorithm = "moon"
+    elif args.algo == "feddc":
+        algorithm = "feddc"
     else:
         raise ValueError("Please specify averaging algorithm")
-    input_args.append(avg_algorithm)
+    input_args.append(algorithm)
     # used model type
     if args.model == "mlpmixer":
         model_args = dict(
@@ -69,20 +73,12 @@ def train(args):
         model_name = args.model
     elif args.model == "resnet":
         model = ResNet50(
-            "ResNet50", channels=NUM_CHANNELS, num_cls=NUM_CLASSES, pretrained=False
+            "ResNet50", channels=NUM_CHANNELS, num_cls=NUM_CLASSES, weights=None
         )
         model_name = "resnet50"
     else:
         raise ValueError("Passed model name is not defined")
     input_args.append(model_name)
-    # used algorithm
-    if args.algo == "fedavg":
-        algorithm = "fedavg"
-    elif args.algo == "moon":
-        algorithm = "moon"
-    elif args.algo == "feddc":
-        algorithm = "feddc"
-    input_args.append(algorithm)
 
     selected_args_str = "/".join(input_args)
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

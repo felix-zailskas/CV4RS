@@ -308,6 +308,7 @@ class GlobalClientFedAvg:
         self.dataset_filter = dataset_filter
         self.results = init_results(self.num_classes)
         self.train_time = None
+        self.client_results = None
         # if gpu parallelization is active we only need the data loaders and no client objects
         if self.gpu_parallelization:
             self.train_loaders = [
@@ -387,18 +388,19 @@ class GlobalClientFedAvg:
             self.results = update_results(self.results, report, self.num_classes)
             print_micro_macro(report)
 
-            for client in self.clients:
-                client.set_model(self.model)
+            if not self.gpu_parallelization:
+                for client in self.clients:
+                    client.set_model(self.model)
 
             # save model state every 5 communication rounds
             if com_round % 5 == 0:
                 self.save_state_dict()
 
         self.train_time = time.perf_counter() - train_start
-
-        self.client_results = [
-            client.get_validation_results() for client in self.clients
-        ]
+        if not self.gpu_parallelization:
+            self.client_results = [
+                client.get_validation_results() for client in self.clients
+            ]
         self.save_results()
         self.save_state_dict()
         return self.results, self.client_results

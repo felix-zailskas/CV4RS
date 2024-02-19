@@ -6,7 +6,7 @@ import torch.backends.cudnn as cudnn
 from sklearn.metrics import average_precision_score, classification_report
 
 
-def change_sizes(self, labels: np.array) -> np.array:
+def change_sizes(labels: np.array) -> np.array:
     """
     Changes the dimensions of the data labels to fit the training setup by transpose.
 

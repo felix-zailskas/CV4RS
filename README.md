@@ -16,8 +16,8 @@ However any model that extends the `torch.nn.Module` class should be compatible 
 The `train.py` script found at the root of this project starts a training run using one of the supported models and data set splits. It initializes one global model and one local client for each `.csv` file in the `data/scenario*/` directories. At the start of the script the following hyper parameters are set:
 
 ```[python]
-LOCAL_EPOCHS = 20  # amount of epochs each client trains for locally
-GLOBAL_COMMUNICATION_ROUNDS = 40  # amount of communication rounds the global model aggregates the local results
+LOCAL_EPOCHS = 3  # amount of epochs each client trains for locally
+GLOBAL_COMMUNICATION_ROUNDS = 30  # amount of communication rounds the global model aggregates the local results
 NUM_CHANNELS = 10
 NUM_CLASSES = 19
 ```
