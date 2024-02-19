@@ -1,7 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from matplotlib.ticker import FuncFormatter
-from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import FuncFormatter, MaxNLocator
 
 
 # Define a custom formatting function to display percentages
@@ -78,7 +77,7 @@ def create_model_comparison_plot(
     save_macro: str = None,
     save_weighted: str = None,
     labels: list[str] = None,
-    model_type: str = None
+    model_type: str = None,
 ):
     micro_fig, micro_ax = plt.subplots(figsize=(6, 4))
     macro_fig, macro_ax = plt.subplots(figsize=(6, 4))

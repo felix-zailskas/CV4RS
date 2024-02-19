@@ -286,25 +286,25 @@ dependencies:
   - zlib-ng=2.0.6=h166bdaf_0
   - zstd=1.5.2=h3eb15da_6
   - pip:
-    - appdirs==1.4.4
-    - bigearthnet-common==2.3.0
-    - bigearthnet-patch-interface==0.1.0
-    - colorama==0.4.5
-    - commonmark==0.9.1
-    - einops==0.7.0
-    - fastcore==1.5.24
-    - filelock==3.13.1
-    - fsspec==2023.12.2
-    - huggingface-hub==0.20.1
-    - natsort==8.2.0
-    - pickle5==0.0.11
-    - pip==22.2.2
-    - prompt-toolkit==3.0.31
-    - pyarrow==9.0.0
-    - pydantic==1.10.2
-    - pyyaml==6.0
-    - rich==11.2.0
-    - safetensors==0.4.1
-    - scikit-multilearn==0.2.0
-    - timm==0.9.12
-    - typer==0.4.2
+      - appdirs==1.4.4
+      - bigearthnet-common==2.3.0
+      - bigearthnet-patch-interface==0.1.0
+      - colorama==0.4.5
+      - commonmark==0.9.1
+      - einops==0.7.0
+      - fastcore==1.5.24
+      - filelock==3.13.1
+      - fsspec==2023.12.2
+      - huggingface-hub==0.20.1
+      - natsort==8.2.0
+      - pickle5==0.0.11
+      - pip==22.2.2
+      - prompt-toolkit==3.0.31
+      - pyarrow==9.0.0
+      - pydantic==1.10.2
+      - pyyaml==6.0
+      - rich==11.2.0
+      - safetensors==0.4.1
+      - scikit-multilearn==0.2.0
+      - timm==0.9.12
+      - typer==0.4.2

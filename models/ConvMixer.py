@@ -51,8 +51,10 @@ class ConvMixer(nn.Module):
 
 def create_convmixer(channels, num_classes, pretrained=False):
     # version = 'convmixer_1536_20'
-    version = 'convmixer_768_32'
+    version = "convmixer_768_32"
     # version = 'convmixer_1024_20_ks9_p14'
-    convmixer = timm.create_model(version, pretrained=pretrained, in_chans=channels, num_classes=num_classes)
-    print('ConvMixer version: ',version)
+    convmixer = timm.create_model(
+        version, pretrained=pretrained, in_chans=channels, num_classes=num_classes
+    )
+    print("ConvMixer version: ", version)
     return convmixer

@@ -56,7 +56,9 @@ class ResNet50(nn.Module):
         self.len = 0
         self.loss = 0
         resnet = models.resnet50(weights=weights)
-        self.conv1 = nn.Conv2d(channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+        self.conv1 = nn.Conv2d(
+            channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False
+        )
         self.encoder = nn.Sequential(
             self.conv1,
             resnet.bn1,

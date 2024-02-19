@@ -197,8 +197,8 @@ class FLCLient:
             z_global = self.global_model(data, features_only=True)
             z_prev = self.previous_model(data, features_only=True)
 
-            exp1 = torch.exp(torch.nn.functional.cosine_similarity(z,z_global) / 0.5)  #temperature default:0.5 ? 
-            exp2 = torch.exp(torch.nn.functional.cosine_similarity(z,z_prev) / 0.5)    #temperature default:0.5 ? 
+            exp1 = torch.exp(torch.nn.functional.cosine_similarity(z,z_global) / 0.5)  #temperature default:0.5 ?
+            exp2 = torch.exp(torch.nn.functional.cosine_similarity(z,z_prev) / 0.5)    #temperature default:0.5 ?
 
             l_con = -torch.log(exp1 / (exp1 + exp2))
 
