@@ -1,6 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.ticker import FuncFormatter
+from matplotlib.ticker import MaxNLocator
 
 
 # Define a custom formatting function to display percentages
@@ -75,29 +76,56 @@ def create_model_comparison_plot(
     show: bool = True,
     save_micro: str = None,
     save_macro: str = None,
+    save_weighted: str = None,
     labels: list[str] = None,
+    model_type: str = None
 ):
     micro_fig, micro_ax = plt.subplots(figsize=(6, 4))
     macro_fig, macro_ax = plt.subplots(figsize=(6, 4))
+    weighted_fig, weighted_ax = plt.subplots(figsize=(6, 4))
 
     # Create plots for micro and macro data
     create_plot(
-        data["micro avg"], axis=micro_ax, fields=model_types, ylab="F1-Score in %", labels=labels
+        data["micro avg"],
+        axis=micro_ax,
+        fields=model_types,
+        ylab="F1-Score in %",
+        labels=labels,
     )
     create_plot(
-        data["macro avg"], axis=macro_ax, fields=model_types, ylab="F1-Score in %", labels=labels
+        data["macro avg"],
+        axis=macro_ax,
+        fields=model_types,
+        ylab="F1-Score in %",
+        labels=labels,
+    )
+    create_plot(
+        data["weighted avg"],
+        axis=weighted_ax,
+        fields=model_types,
+        ylab="F1-Score in %",
+        labels=labels,
     )
 
     # adjust figure name etc.
-    micro_ax.set_title(f"F1-Score Micro Average")
-    macro_ax.set_title(f"F1-Score Macro Average")
+    micro_ax.set_title(f"{model_type} F1-Score Micro Average")
+    micro_ax.set_xlabel(f"Communication Rounds")
+    micro_ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    macro_ax.set_title(f"{model_type} F1-Score Macro Average")
+    macro_ax.set_xlabel(f"Communication Rounds")
+    macro_ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    weighted_ax.set_title(f"{model_type} F1-Score Weighted Average")
+    weighted_ax.set_xlabel(f"Communication Rounds")
+    weighted_ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
     plt.tight_layout()
 
     if save_micro is not None:
-        micro_fig.savefig(save_micro)
+        micro_fig.savefig(save_micro, dpi=500)
     if save_macro is not None:
-        macro_fig.savefig(save_macro)
+        macro_fig.savefig(save_macro, dpi=500)
+    if save_weighted is not None:
+        weighted_fig.savefig(save_weighted, dpi=500)
 
     if show:
         plt.show()

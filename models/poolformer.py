@@ -459,7 +459,7 @@ default_cfgs = {
 }
 
 
-def create_poolformer_s12(pretrained=False, **kwargs):
+def create_poolformer_s12(layers=[2, 2, 6, 2], pretrained=False, **kwargs):
     """
     PoolFormer-S12 model, Params: 12M
     --layers: [x,x,x,x], numbers of layers for the four stages
@@ -467,7 +467,7 @@ def create_poolformer_s12(pretrained=False, **kwargs):
         embedding dims and mlp ratios for the four stages
     --downsamples: flags to apply downsampling or not in four blocks
     """
-    layers = [2, 2, 6, 2]
+    # layers = [2, 2, 6, 2]
     embed_dims = [64, 128, 320, 512]
     mlp_ratios = [4, 4, 4, 4]
     downsamples = [True, True, True, True]

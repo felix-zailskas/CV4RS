@@ -48,6 +48,7 @@ def fc_init_weights(m):
 
 #         return logits
 
+
 class ResNet50(nn.Module):
     def __init__(self, name, num_cls=19, channels=10, FC_dim=2048, weights=None):
         super(ResNet50, self).__init__()
@@ -65,11 +66,12 @@ class ResNet50(nn.Module):
             resnet.layer2,
             resnet.layer3,
             resnet.layer4,
-            resnet.avgpool
+            resnet.avgpool,
         )
         self.FC = nn.Linear(FC_dim, num_cls)
         self.apply(weights_init_kaiming)
         self.apply(fc_init_weights)
+
     def forward(self, x):
         x = self.encoder(x)
         x = x.view(x.size(0), -1)

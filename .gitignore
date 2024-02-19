@@ -53,8 +53,8 @@ bin/
 
 # data files to save space
 **/data/*
-!data/countries/
-!data/countries_random/
+!data/scenario*/
 **/checkpoints/*
 **/results/*
 **/img/*
+**/logs/*
