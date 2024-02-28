@@ -12,6 +12,10 @@ class Residual(nn.Module):
 
 
 class ConvMixer(nn.Module):
+    """
+    Implementation of the ConvMixer architecture as found in https://doi.org/10.48550/arXiv.2201.09792
+    """
+
     def __init__(
         self, dim, depth, channels, kernel_size=9, patch_size=7, n_classes=1000
     ):
@@ -49,10 +53,25 @@ class ConvMixer(nn.Module):
         return y
 
 
-def create_convmixer(channels, num_classes, pretrained=False):
-    # version = 'convmixer_1536_20'
-    version = 'convmixer_768_32'
-    # version = 'convmixer_1024_20_ks9_p14'
-    convmixer = timm.create_model(version, pretrained=pretrained, in_chans=channels, num_classes=num_classes)
-    print('ConvMixer version: ',version)
+def create_convmixer(
+    channels: int,
+    num_classes: int,
+    pretrained: bool = False,
+    version: str = "convmixer_768_32",
+) -> ConvMixer:
+    """
+    Initializes and returns an instance of the ConvMixer architecture.
+
+    Args:
+        channels (int): Amount of channels in the input images.
+        num_classes (int): Amount of classes to predict from.
+        pretrained (bool, optional): Use model pretrained on ImageNet1K. Defaults to False.
+        version (str, optional): Chose model type as available on timm. Defaults to "convmixer_768_32".
+
+    Returns:
+        ConvMixer: The ConvMixer as specified.
+    """
+    convmixer = timm.create_model(
+        version, pretrained=pretrained, in_chans=channels, num_classes=num_classes
+    )
     return convmixer

@@ -4,22 +4,20 @@
 
 The following models are available in the current project version:
 
-<!-- TODO: add paper links for each model type -->
-
-- ResNet
-- MLP-Mixer
-- ConvMixer
-- PoolFormer
+- ResNet-50
+- [MLP-Mixer](https://arxiv.org/pdf/2105.01601.pdf)
+- [ConvMixer](https://doi.org/10.48550/arXiv.2201.09792)
+- [PoolFormer](https://doi.org/10.1109/cvpr52688.2022.01055)
 
 However any model that extends the `torch.nn.Module` class should be compatible with the code.
 
 ## Execution
 
-The `train.py` script found at the root of this project starts a training run using one of the supported models and data set splits. It initializes one global model and one local client for each `.csv` file in the `data/scenario*/` directories. At the start of the script the following hyperparameters are set:
+The `train.py` script found at the root of this project starts a training run using one of the supported models and data set splits. It initializes one global model and one local client for each `.csv` file in the `data/scenario*/` directories. At the start of the script the following hyper parameters are set:
 
-```
-LOCAL_EPOCHS = 20  # amount of epochs each client trains for locally
-GLOBAL_COMMUNICATION_ROUNDS = 40  # amount of communication rounds the global model aggregates the local results
+```[python]
+LOCAL_EPOCHS = 3  # amount of epochs each client trains for locally
+GLOBAL_COMMUNICATION_ROUNDS = 30  # amount of communication rounds the global model aggregates the local results
 NUM_CHANNELS = 10
 NUM_CLASSES = 19
 ```
@@ -28,7 +26,7 @@ These should be adjusted to the needed use case.
 
 An example command for execution would be
 
-```
+```[bash]
 CUDA_VISIBLE_DEVICES=0 numactl -C 0-5 python3 train.py -DS 1 --model resnet --algo fedavg
 ```
 
@@ -38,9 +36,9 @@ To prevent the training script to take over too much of the CPU workload and ess
 
 ### GPU Parallelization
 
-The current project version supports training multiple simulated local clients on different GPUs at the same time. The training script will use all available `cuda` devices it can find. To set the GPUs to use during training use the `CUDA_VISIBLE_DEVICES` environment variable. Parallelization is done by creating a queue of local clients that need to be trained. Then a `gpu_parallelization.GPUWorker` object is initialized for each available GPU which contains this queue. Using `multiprocessing.Lock` objects it is ensured that only one model is trained on each GPU at the same time. The results of this training are returned to the global model and then aggregated normaly.
+The current project version supports training multiple simulated local clients on different GPUs at the same time. The training script will use all available `cuda` devices it can find. To set the GPUs to use during training use the `CUDA_VISIBLE_DEVICES` environment variable. Parallelization is done by creating a queue of local clients that need to be trained. Then a `gpu_parallelization.GPUWorker` object is initialized for each available GPU which contains this queue. Using `multiprocessing.Lock` objects it is ensured that only one model is trained on each GPU at the same time. The results of this training are returned to the global model and then aggregated normally.
 
-Note that in our tests the usage of multiple GPUs for the same training run did not result in a significant decrease in training time. There seems to be some sort of overhead to schedule the different training processes and accessing the same training data in our server. Hence the multiprocessing logic is only actiavted when multiple GPUs are made available to the training script. If you do not want to use it make sure to only make one GPU visible to the training script. Furthermore, note that all GPU workers log only to stdout.
+Note that in our tests the usage of multiple GPUs for the same training run did not result in a significant decrease in training time. There seems to be some sort of overhead to schedule the different training processes and accessing the same training data in our server. Hence the multiprocessing logic is only activated when multiple GPUs are made available to the training script and when the FedAvg algorithm is used. If you do not want to use it make sure to only make one GPU visible to the training script. Furthermore, note that all GPU workers log only to stdout.
 
 To activate training with a single GPU training make that GPU visible (Recommended):
 
@@ -76,8 +74,10 @@ The current version supports four model types as described above. Which one shou
 
 ### Averaging Algorithm
 
-The current version supports the FedAvg and FedDC averaging algorithms. Which one should be used can be controlled by the execution flag `--algo` it expects an input of [fedavg, feddc]. The default is FedAvg. Note that the parallelized GPU logic only supports FedAvg.
+_*Note*_: The FedDC implementation is currently not working and will most likely produce a model output of NaN after approximately five iterations. Hence the usage of this algorithm is only possible when the additional flag `--feddc` is given
+
+The current version supports the FedAvg and FedDC averaging algorithms. Which one should be used can be controlled by the execution flag `--algo` it expects an input of [fedavg, moon, feddc]. The default is FedAvg. Note that the parallelized GPU logic only supports FedAvg.
 
 ## Logs
 
-Every training run produces log files in which the user can track the training progress. These will be saved under `logs/{scenario}/{model_type}/{averaging_algorithm}/epochs({LOCAL_EPOCHS})_comrounds({GLOBAL_COMMUNICATION_ROUNDS})_{current_time}`. There will be one global log file which tracks the progress of the global model as well as some meta information about the clients training, and one additional log file for each local client which tracks more detailed information about the local training progress. In the case of actiavted GPU parallelization the log files for the local clients will be replaced by a logs of the GPUWorkers to stdout only.
+Every training run produces log files in which the user can track the training progress. These will be saved under `logs/{scenario}/{model_type}/{averaging_algorithm}/epochs({LOCAL_EPOCHS})_comrounds({GLOBAL_COMMUNICATION_ROUNDS})_{current_time}`. There will be one global log file which tracks the progress of the global model as well as some meta information about the clients training, and one additional log file for each local client which tracks more detailed information about the local training progress. In the case of activated GPU parallelization the log files for the local clients will be replaced by a logs of the GPUWorkers to stdout only.

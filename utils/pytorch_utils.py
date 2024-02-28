@@ -6,6 +6,23 @@ import torch.backends.cudnn as cudnn
 from sklearn.metrics import average_precision_score, classification_report
 
 
+def change_sizes(labels: np.array) -> np.array:
+    """
+    Changes the dimensions of the data labels to fit the training setup by transpose.
+
+    Args:
+        labels (np.array): Original labels as numpy array.
+
+    Returns:
+        np.array: Transposed labels.
+    """
+    new_labels = np.zeros((len(labels[0]), 19))
+    for i in range(len(labels[0])):  # 128
+        for j in range(len(labels)):  # 19
+            new_labels[i, j] = int(labels[j][i])
+    return new_labels
+
+
 def start_cuda(cuda_no):
     torch.cuda.set_device(cuda_no)
     print("Using GPU No. {}".format(torch.cuda.current_device()))
@@ -82,15 +99,6 @@ def get_classification_report(
         ireland_indices = np.delete(np.arange(0, 19), [3, 7])
         y_true = y_true[:, ireland_indices]
         predicted_probs = predicted_probs[:, ireland_indices]
-    print("PRECISION SCORE INVESTIGATION")
-    print("TRUE LABELS")
-    print(np.isnan(y_true).any())
-    print(np.isinf(y_true).any())
-    print(y_true)
-    print("PRED LABELS")
-    print(np.isnan(predicted_probs).any())
-    print(np.isinf(predicted_probs).any())
-    print(predicted_probs)
     ap_mic = average_precision_score(y_true, predicted_probs, average="micro")
     ap_mac = average_precision_score(y_true, predicted_probs, average="macro")
     report.update({"ap_mic": ap_mic, "ap_mac": ap_mac})

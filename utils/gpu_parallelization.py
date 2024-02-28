@@ -5,31 +5,16 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-
-def parallel_gpu_work(gpu_worker):
-    results = []
-    while True:
-        # Dequeue a model input to train
-        model_input = gpu_worker.model_queue.get()
-
-        # Check if the model input is a sentinel value indicating the end of training
-        if model_input is None:
-            print(f"GPU {gpu_worker.gpu_id}: No more models to train. Exiting.")
-            break
-
-        # Train the model and get the result
-        with gpu_worker.gpu_lock:
-            epochs, train_loader = model_input
-            gpu_worker.train_loader = train_loader
-            result = gpu_worker.train_one_round(epochs)
-
-            # Append the result to the local results list
-            print(f"GPU {gpu_worker.gpu_id}: Appended result to the list")
-            results.append(result)
-    return results
+from utils.pytorch_utils import change_sizes
 
 
 class GPUWorker:
+    """
+    Implementation of a GPU worker process to handle parallel training. It mostly mirrors
+    the FLCLient class but cannot handle file logging due to serialization limitations of
+    file handlers.
+    """
+
     def __init__(self, gpu_id, model_queue, gpu_locks, model) -> None:
         self.gpu_id = gpu_id
         self.model_queue = model_queue
@@ -72,13 +57,6 @@ class GPUWorker:
 
         return model_update
 
-    def change_sizes(self, labels):
-        new_labels = np.zeros((len(labels[0]), 19))
-        for i in range(len(labels[0])):  # 128
-            for j in range(len(labels)):  # 19
-                new_labels[i, j] = int(labels[j][i])
-        return new_labels
-
     def train_epoch(self, training_device):
         self.model.train()
         for idx, batch in enumerate(
@@ -90,7 +68,7 @@ class GPUWorker:
             data, labels, index = batch["data"], batch["label"], batch["index"]
             data = data.to(training_device)
             label_new = np.copy(labels)
-            label_new = self.change_sizes(label_new)
+            label_new = change_sizes(label_new)
             label_new = torch.from_numpy(label_new).to(training_device)
             self.optimizer.zero_grad()
 
@@ -98,3 +76,35 @@ class GPUWorker:
             loss = self.criterion(logits, label_new)
             loss.backward()
             self.optimizer.step()
+
+
+def parallel_gpu_work(gpu_worker: GPUWorker) -> list[dict]:
+    """
+    Function to process parallel training of local clients.
+
+    Args:
+        gpu_worker (GPUWorker): Worker object connected to a GPU instance.
+
+    Returns:
+        list[dict]: Model updates computed by the given GPU worker process.
+    """
+    results = []
+    while True:
+        # Dequeue a model input to train
+        model_input = gpu_worker.model_queue.get()
+
+        # Check if the model input is a sentinel value indicating the end of training
+        if model_input is None:
+            print(f"GPU {gpu_worker.gpu_id}: No more models to train. Exiting.")
+            break
+
+        # Train the model and get the result
+        with gpu_worker.gpu_lock:
+            epochs, train_loader = model_input
+            gpu_worker.train_loader = train_loader
+            result = gpu_worker.train_one_round(epochs)
+
+            # Append the result to the local results list
+            print(f"GPU {gpu_worker.gpu_id}: Appended result to the list")
+            results.append(result)
+    return results
